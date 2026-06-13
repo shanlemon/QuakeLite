@@ -1,0 +1,642 @@
+// ---------------------------------------------------------------------------
+// QuakeLite HUD — pure DOM, no canvas. Implements the Hud contract from
+// types.ts. All CSS is injected via a <style> tag; the root (#hud) overlay is
+// pointer-events:none with interactive panels (pause) opting back in.
+// setStats() runs every frame, so every per-frame write is diffed against a
+// cached value to avoid layout/style thrash.
+// ---------------------------------------------------------------------------
+
+import type {
+  CreateHud,
+  Hud,
+  HudCallbacks,
+  HudStats,
+  ScoreRow,
+  Settings,
+} from './types';
+import { GAME, playerColor } from '../../shared/constants';
+
+const SETTINGS_KEY = 'quakelite-settings';
+const DEFAULT_SETTINGS: Settings = { fov: 105, sensitivity: 2, volume: 0.7 };
+
+function colorHex(idx: number): string {
+  return '#' + playerColor(idx).toString(16).padStart(6, '0');
+}
+
+function clampNum(v: number, min: number, max: number): number {
+  return v < min ? min : v > max ? max : v;
+}
+
+function loadSettings(): Settings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_SETTINGS };
+    const p = JSON.parse(raw) as Partial<Settings>;
+    return {
+      fov: clampNum(typeof p.fov === 'number' && isFinite(p.fov) ? p.fov : DEFAULT_SETTINGS.fov, 90, 130),
+      sensitivity: clampNum(
+        typeof p.sensitivity === 'number' && isFinite(p.sensitivity) ? p.sensitivity : DEFAULT_SETTINGS.sensitivity,
+        0.5,
+        6,
+      ),
+      volume: clampNum(typeof p.volume === 'number' && isFinite(p.volume) ? p.volume : DEFAULT_SETTINGS.volume, 0, 1),
+    };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+function saveSettings(s: Settings): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+  } catch {
+    // storage unavailable (sandboxed iframe) — settings just won't persist
+  }
+}
+
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  cls?: string,
+  parent?: HTMLElement,
+): HTMLElementTagNameMap[K] {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+const FONT = `'Rajdhani','Segoe UI',Consolas,'Courier New',monospace`;
+
+const CSS = `
+.ql-hud-root{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:10;
+  font-family:${FONT};color:#dff6ff;-webkit-user-select:none;user-select:none;}
+.ql-hud-root *{box-sizing:border-box;margin:0;padding:0;}
+.ql-hidden{display:none !important;}
+.ql-glow{text-shadow:0 0 8px rgba(120,220,255,0.55),0 1px 2px rgba(0,0,0,0.85);}
+
+/* ---- crosshair ---- */
+.ql-xhair{position:absolute;left:50%;top:50%;width:0;height:0;}
+.ql-xhair span{position:absolute;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,0.75);}
+.ql-xh-dot{width:3px;height:3px;left:-1.5px;top:-1.5px;border-radius:50%;}
+.ql-xh-t{width:2px;height:4px;left:-1px;top:-9px;}
+.ql-xh-b{width:2px;height:4px;left:-1px;top:5px;}
+.ql-xh-l{width:4px;height:2px;left:-9px;top:-1px;}
+.ql-xh-r{width:4px;height:2px;left:5px;top:-1px;}
+
+/* ---- top bar ---- */
+.ql-clock{position:absolute;top:14px;left:50%;transform:translateX(-50%);
+  font-size:26px;font-weight:700;letter-spacing:3px;padding:2px 16px;
+  background:rgba(5,10,20,0.65);border:1px solid rgba(150,175,205,0.35);}
+.ql-frags{position:absolute;top:14px;right:16px;text-align:right;padding:6px 14px;
+  background:rgba(5,10,20,0.65);border:1px solid rgba(150,175,205,0.35);}
+.ql-frags-big{font-size:28px;font-weight:700;letter-spacing:1px;line-height:1.1;}
+.ql-frags-big b{color:#46e6ff;font-weight:800;}
+.ql-leader{font-size:13px;letter-spacing:2px;color:#9fb6c8;margin-top:2px;}
+
+/* ---- kill feed ---- */
+.ql-feed{position:absolute;top:14px;left:16px;display:flex;flex-direction:column;gap:4px;max-width:42vw;}
+.ql-kill{display:flex;gap:7px;align-items:center;font-size:15px;font-weight:600;padding:3px 10px;
+  background:rgba(5,10,20,0.65);border:1px solid rgba(150,175,205,0.3);
+  opacity:1;transform:translateX(0);transition:opacity .4s ease,transform .4s ease;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ql-kill.me{border-color:rgba(125,225,255,0.85);box-shadow:0 0 10px rgba(70,230,255,0.25);}
+.ql-kill.out{opacity:0;transform:translateX(-16px);}
+.ql-bolt{color:#ffd60a;text-shadow:0 0 5px rgba(255,214,10,0.7);}
+
+/* ---- rail cooldown ---- */
+.ql-cd{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);width:220px;height:10px;
+  background:rgba(5,10,20,0.65);border:1px solid rgba(150,175,205,0.35);}
+.ql-cd-fill{height:100%;width:100%;transform-origin:0 50%;transform:scaleX(0);
+  background:rgba(80,165,205,0.55);}
+.ql-cd.full{border-color:rgba(125,235,255,0.8);}
+.ql-cd.full .ql-cd-fill{background:#46e6ff;box-shadow:0 0 10px rgba(70,230,255,0.85);}
+.ql-cd.pulse{animation:ql-cd-pulse .3s ease-out;}
+@keyframes ql-cd-pulse{
+  0%{box-shadow:0 0 20px rgba(70,230,255,0.95);transform:translateX(-50%) scaleY(1.5);}
+  100%{box-shadow:none;transform:translateX(-50%) scaleY(1);}}
+
+/* ---- speedometer ---- */
+.ql-speed{position:absolute;bottom:22px;left:18px;}
+.ql-speed-text{font-size:20px;font-weight:700;letter-spacing:1px;
+  text-shadow:0 0 8px rgba(120,220,255,0.4),0 1px 2px rgba(0,0,0,0.85);}
+.ql-speed-track{width:150px;height:6px;margin-top:4px;
+  background:rgba(5,10,20,0.65);border:1px solid rgba(150,175,205,0.35);}
+.ql-speed-fill{height:100%;width:100%;transform-origin:0 50%;transform:scaleX(0);
+  background:#cfe8f5;}
+.ql-speed.fast .ql-speed-fill{background:#46e6ff;box-shadow:0 0 8px rgba(70,230,255,0.7);}
+.ql-speed.fast .ql-speed-text{color:#7df0ff;}
+
+/* ---- ping ---- */
+.ql-ping{position:absolute;bottom:22px;right:18px;font-size:16px;font-weight:600;
+  letter-spacing:2px;color:#9fb6c8;text-shadow:0 1px 2px rgba(0,0,0,0.85);}
+
+/* ---- center message ---- */
+.ql-msg{position:absolute;top:30%;left:50%;transform:translate(-50%,-50%);
+  font-size:34px;font-weight:800;letter-spacing:5px;text-transform:uppercase;white-space:nowrap;
+  color:#eafcff;text-shadow:0 0 16px rgba(70,230,255,0.8),0 2px 5px rgba(0,0,0,0.85);
+  opacity:0;transition:opacity .18s ease;}
+.ql-msg.show{opacity:1;}
+
+/* ---- death state ---- */
+.ql-vignette{position:absolute;inset:0;z-index:2;
+  background:radial-gradient(ellipse at center,rgba(120,0,0,0) 40%,rgba(150,0,12,0.55) 100%);}
+.ql-respawn{position:absolute;bottom:18%;left:50%;transform:translateX(-50%);z-index:2;
+  font-size:24px;font-weight:700;letter-spacing:3px;white-space:nowrap;
+  color:#ff9090;text-shadow:0 0 12px rgba(255,60,60,0.7),0 1px 3px rgba(0,0,0,0.85);}
+
+/* ---- fullscreen flash ---- */
+.ql-flash{position:absolute;inset:0;z-index:3;opacity:0.55;}
+
+/* ---- scoreboard ---- */
+.ql-score{position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;}
+.ql-score-panel{min-width:480px;max-width:680px;max-height:80vh;overflow-y:auto;padding:18px 26px;
+  background:rgba(5,10,20,0.78);border:1px solid rgba(150,175,205,0.4);
+  box-shadow:0 0 50px rgba(0,0,0,0.6);}
+.ql-score-title{font-size:20px;font-weight:700;letter-spacing:3px;text-align:center;
+  color:#46e6ff;text-shadow:0 0 10px rgba(70,230,255,0.5);margin-bottom:12px;white-space:nowrap;}
+.ql-table{width:100%;border-collapse:collapse;font-size:16px;}
+.ql-table th{font-size:12px;font-weight:600;letter-spacing:2px;color:#8fa9bd;text-align:left;
+  padding:4px 10px;border-bottom:1px solid rgba(150,175,205,0.3);}
+.ql-table td{padding:5px 10px;border-bottom:1px solid rgba(150,175,205,0.12);}
+.ql-table th.num,.ql-table td.num{text-align:right;font-variant-numeric:tabular-nums;}
+.ql-table .ql-name{font-weight:700;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.ql-row-local{background:rgba(70,230,255,0.10);box-shadow:inset 3px 0 0 #46e6ff;}
+.ql-av{width:28px;height:28px;border-radius:50%;display:block;object-fit:cover;}
+.ql-av-fb{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:14px;color:rgba(0,0,0,0.82);}
+
+/* ---- pause overlay ---- */
+.ql-pause{position:absolute;inset:0;z-index:7;display:flex;align-items:center;justify-content:center;
+  background:rgba(2,5,12,0.72);pointer-events:auto;}
+.ql-pause-panel{width:430px;max-height:92vh;overflow-y:auto;padding:26px 30px;text-align:center;
+  background:rgba(5,10,20,0.85);border:1px solid rgba(150,175,205,0.4);
+  box-shadow:0 0 60px rgba(0,0,0,0.7);}
+.ql-title{font-size:42px;font-weight:800;letter-spacing:9px;color:#eafcff;
+  text-shadow:0 0 20px rgba(70,230,255,0.7),0 2px 4px rgba(0,0,0,0.9);}
+.ql-sub{font-size:15px;letter-spacing:3px;color:#9fb6c8;margin:4px 0 20px;}
+.ql-btn{pointer-events:auto;cursor:pointer;display:block;width:100%;padding:12px 0;margin:0 0 20px;
+  font-family:${FONT};font-size:20px;font-weight:800;letter-spacing:3px;
+  color:#06121e;background:#46e6ff;border:1px solid #7df0ff;}
+.ql-btn:hover{background:#7df0ff;box-shadow:0 0 18px rgba(70,230,255,0.6);}
+.ql-btn:active{transform:translateY(1px);}
+.ql-set-row{display:grid;grid-template-columns:106px 1fr 58px;gap:10px;align-items:center;
+  margin:10px 0;font-size:14px;letter-spacing:1px;color:#cfe3f0;text-align:left;}
+.ql-set-row input[type=range]{width:100%;accent-color:#46e6ff;cursor:pointer;background:transparent;}
+.ql-set-val{text-align:right;color:#46e6ff;font-weight:700;font-variant-numeric:tabular-nums;}
+.ql-legend{margin-top:18px;font-size:13px;color:#9fb6c8;letter-spacing:1px;line-height:1.7;}
+.ql-tip{margin-top:10px;font-size:12px;color:#6f8ba0;font-style:italic;line-height:1.5;}
+
+/* ---- match end ---- */
+.ql-end{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;
+  background:rgba(2,5,12,0.68);}
+.ql-end-panel{width:540px;max-height:88vh;overflow-y:auto;padding:24px 30px;text-align:center;
+  background:rgba(5,10,20,0.85);border:1px solid rgba(150,175,205,0.4);
+  box-shadow:0 0 60px rgba(0,0,0,0.7);}
+.ql-end-title{font-size:32px;font-weight:800;letter-spacing:7px;color:#eafcff;
+  text-shadow:0 0 18px rgba(70,230,255,0.7);}
+.ql-podium{display:flex;justify-content:center;align-items:flex-end;gap:14px;margin:18px 0 16px;}
+.ql-pod{flex:1;min-width:0;padding:10px 8px;background:rgba(5,10,20,0.7);border:1px solid rgba(150,175,205,0.35);}
+.ql-pod .rank{font-size:12px;font-weight:700;letter-spacing:2px;}
+.ql-pod .pname{font-weight:700;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:2px 0;}
+.ql-pod .pfrags{font-size:22px;font-weight:800;color:#eafcff;font-variant-numeric:tabular-nums;}
+.ql-pod-1{border-color:#ffd60a;box-shadow:0 0 16px rgba(255,214,10,0.35);padding:18px 8px;}
+.ql-pod-1 .rank{color:#ffd60a;}
+.ql-pod-1 .pname{font-size:19px;}
+.ql-pod-1 .pfrags{font-size:32px;}
+.ql-pod-2{border-color:#c0c8d0;}
+.ql-pod-2 .rank{color:#c0c8d0;}
+.ql-pod-3{border-color:#cd7f32;}
+.ql-pod-3 .rank{color:#cd7f32;}
+.ql-end-count{margin-top:14px;font-size:18px;font-weight:700;letter-spacing:2px;color:#46e6ff;
+  text-shadow:0 0 8px rgba(70,230,255,0.5);}
+
+/* ---- connection screen ---- */
+.ql-connect{position:absolute;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;
+  background:#040810;}
+.ql-connect-text{font-size:24px;font-weight:700;letter-spacing:5px;text-transform:uppercase;
+  color:#9fdcef;text-shadow:0 0 14px rgba(70,230,255,0.5);text-align:center;padding:0 24px;
+  animation:ql-pulse 1.4s ease-in-out infinite;}
+@keyframes ql-pulse{0%,100%{opacity:0.4;}50%{opacity:1;}}
+`;
+
+export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud => {
+  if (!document.getElementById('ql-hud-style')) {
+    const style = document.createElement('style');
+    style.id = 'ql-hud-style';
+    style.textContent = CSS;
+    document.head.appendChild(style);
+  }
+  root.classList.add('ql-hud-root');
+
+  let settings = loadSettings();
+
+  // --- crosshair -----------------------------------------------------------
+  const xhair = el('div', 'ql-xhair', root);
+  for (const c of ['ql-xh-dot', 'ql-xh-t', 'ql-xh-b', 'ql-xh-l', 'ql-xh-r']) {
+    el('span', c, xhair);
+  }
+
+  // --- top: clock / frags / kill feed -------------------------------------
+  const clockEl = el('div', 'ql-clock ql-glow', root);
+  clockEl.textContent = '0:00';
+
+  const fragsBox = el('div', 'ql-frags', root);
+  const fragsBig = el('div', 'ql-frags-big ql-glow', fragsBox);
+  fragsBig.appendChild(document.createTextNode('FRAGS '));
+  const fragsNum = el('b', undefined, fragsBig);
+  fragsNum.textContent = '0';
+  fragsBig.appendChild(document.createTextNode(` / ${GAME.FRAG_LIMIT}`));
+  const leaderEl = el('div', 'ql-leader ql-hidden', fragsBox);
+
+  const feedEl = el('div', 'ql-feed', root);
+
+  // --- bottom: cooldown / speed / ping -------------------------------------
+  const cdEl = el('div', 'ql-cd', root);
+  const cdFill = el('div', 'ql-cd-fill', cdEl);
+
+  const speedEl = el('div', 'ql-speed', root);
+  const speedText = el('div', 'ql-speed-text', speedEl);
+  speedText.textContent = '0 ups';
+  const speedTrack = el('div', 'ql-speed-track', speedEl);
+  const speedFill = el('div', 'ql-speed-fill', speedTrack);
+
+  const pingEl = el('div', 'ql-ping', root);
+  pingEl.textContent = 'PING 0';
+
+  // --- center message / death state ----------------------------------------
+  const msgEl = el('div', 'ql-msg', root);
+  const vignetteEl = el('div', 'ql-vignette ql-hidden', root);
+  const respawnEl = el('div', 'ql-respawn ql-hidden', root);
+
+  // --- scoreboard ----------------------------------------------------------
+  const scoreEl = el('div', 'ql-score ql-hidden', root);
+  const scorePanel = el('div', 'ql-score-panel', scoreEl);
+  const scoreTitle = el('div', 'ql-score-title', scorePanel);
+  scoreTitle.textContent = 'VORTEX PORTAL — FREE FOR ALL';
+  const scoreTable = el('table', 'ql-table', scorePanel);
+  const scoreHead = el('thead', undefined, scoreTable);
+  {
+    const tr = el('tr', undefined, scoreHead);
+    for (const [text, cls] of [
+      ['', ''],
+      ['PLAYER', ''],
+      ['FRAGS', 'num'],
+      ['DEATHS', 'num'],
+      ['PING', 'num'],
+    ] as const) {
+      const th = el('th', cls || undefined, tr);
+      th.textContent = text;
+    }
+  }
+  const scoreBody = el('tbody', undefined, scoreTable);
+
+  function fallbackAvatar(colorIdx: number, name: string): HTMLElement {
+    const d = el('div', 'ql-av-fb');
+    d.style.background = colorHex(colorIdx);
+    d.textContent = (name.trim().charAt(0) || '?').toUpperCase();
+    return d;
+  }
+
+  // --- pause overlay --------------------------------------------------------
+  const pauseEl = el('div', 'ql-pause ql-hidden', root);
+  const pausePanel = el('div', 'ql-pause-panel', pauseEl);
+  const titleEl = el('div', 'ql-title', pausePanel);
+  titleEl.textContent = 'QUAKELITE';
+  const subEl = el('div', 'ql-sub', pausePanel);
+  subEl.textContent = 'Vortex Portal — Instagib FFA';
+  const resumeBtn = el('button', 'ql-btn', pausePanel);
+  resumeBtn.type = 'button';
+  resumeBtn.textContent = 'CLICK TO RESUME';
+  resumeBtn.addEventListener('click', () => cb.onResume());
+
+  function applySettings(): void {
+    saveSettings(settings);
+    cb.onSettingsChange({ ...settings });
+  }
+
+  function sliderRow(
+    label: string,
+    min: number,
+    max: number,
+    step: number,
+    value: number,
+    fmt: (v: number) => string,
+    onInput: (v: number) => void,
+  ): void {
+    const row = el('div', 'ql-set-row', pausePanel);
+    const lab = el('span', undefined, row);
+    lab.textContent = label;
+    const input = el('input', undefined, row);
+    input.type = 'range';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(value);
+    const valEl = el('span', 'ql-set-val', row);
+    valEl.textContent = fmt(value);
+    input.addEventListener('input', () => {
+      const v = parseFloat(input.value);
+      if (!isFinite(v)) return;
+      valEl.textContent = fmt(v);
+      onInput(v);
+    });
+  }
+
+  sliderRow('FOV', 90, 130, 1, settings.fov, (v) => String(Math.round(v)), (v) => {
+    settings = { ...settings, fov: clampNum(Math.round(v), 90, 130) };
+    applySettings();
+  });
+  sliderRow('SENSITIVITY', 0.5, 6, 0.1, settings.sensitivity, (v) => v.toFixed(1), (v) => {
+    settings = { ...settings, sensitivity: clampNum(v, 0.5, 6) };
+    applySettings();
+  });
+  sliderRow('VOLUME', 0, 100, 1, Math.round(settings.volume * 100), (v) => `${Math.round(v)}%`, (v) => {
+    settings = { ...settings, volume: clampNum(v / 100, 0, 1) };
+    applySettings();
+  });
+
+  const legendEl = el('div', 'ql-legend', pausePanel);
+  legendEl.textContent =
+    'WASD move · SPACE jump (hold to bunny hop) · MOUSE aim · CLICK fire · TAB scores · ESC pause';
+  const tipEl = el('div', 'ql-tip', pausePanel);
+  tipEl.textContent =
+    'Tip: in the air, hold forward + one strafe key and smoothly turn the mouse the same way — you gain speed past 320 ups.';
+
+  // --- match end overlay ----------------------------------------------------
+  const endEl = el('div', 'ql-end ql-hidden', root);
+  const endPanel = el('div', 'ql-end-panel', endEl);
+  const endTitle = el('div', 'ql-end-title', endPanel);
+  endTitle.textContent = 'MATCH COMPLETE';
+  const podiumEl = el('div', 'ql-podium', endPanel);
+  const endTable = el('table', 'ql-table', endPanel);
+  const endHead = el('thead', undefined, endTable);
+  {
+    const tr = el('tr', undefined, endHead);
+    for (const [text, cls] of [
+      ['#', ''],
+      ['PLAYER', ''],
+      ['FRAGS', 'num'],
+      ['DEATHS', 'num'],
+    ] as const) {
+      const th = el('th', cls || undefined, tr);
+      th.textContent = text;
+    }
+  }
+  const endBody = el('tbody', undefined, endTable);
+  const endCount = el('div', 'ql-end-count', endPanel);
+  let endTimer: number | null = null;
+  let lastEndCountText = '';
+
+  // --- connection screen ----------------------------------------------------
+  const connectEl = el('div', 'ql-connect ql-hidden', root);
+  const connectText = el('div', 'ql-connect-text', connectEl);
+
+  // --- per-frame stat cache --------------------------------------------------
+  const last = {
+    clockSec: -1,
+    frags: NaN,
+    topEnemy: NaN,
+    cdFrac: -1,
+    cdFull: false,
+    speed: NaN,
+    speedFast: false,
+    speedBar: -1,
+    ping: NaN,
+    alive: true,
+    respawnText: '',
+  };
+
+  let msgTimer: number | null = null;
+
+  return {
+    setStats(s: HudStats): void {
+      // clock
+      const sec = Math.max(0, Math.ceil(s.timeLeftMs / 1000));
+      if (sec !== last.clockSec) {
+        last.clockSec = sec;
+        const m = Math.floor(sec / 60);
+        clockEl.textContent = `${m}:${String(sec % 60).padStart(2, '0')}`;
+      }
+      // frags
+      if (s.frags !== last.frags) {
+        last.frags = s.frags;
+        fragsNum.textContent = String(s.frags);
+      }
+      // leader
+      if (s.topEnemyFrags !== last.topEnemy) {
+        last.topEnemy = s.topEnemyFrags;
+        if (s.topEnemyFrags < 0) {
+          leaderEl.classList.add('ql-hidden');
+        } else {
+          leaderEl.textContent = `LEADER ${s.topEnemyFrags}`;
+          leaderEl.classList.remove('ql-hidden');
+        }
+      }
+      // cooldown
+      const frac = clampNum(s.cooldownFrac, 0, 1);
+      if (Math.abs(frac - last.cdFrac) > 0.0005) {
+        last.cdFrac = frac;
+        cdFill.style.transform = `scaleX(${frac.toFixed(4)})`;
+      }
+      const full = frac >= 1;
+      if (full !== last.cdFull) {
+        last.cdFull = full;
+        if (full) {
+          cdEl.classList.add('full');
+          // restart the one-shot pulse animation
+          cdEl.classList.remove('pulse');
+          void cdEl.offsetWidth;
+          cdEl.classList.add('pulse');
+        } else {
+          cdEl.classList.remove('full', 'pulse');
+        }
+      }
+      // speed
+      const sp = Math.max(0, Math.round(s.speed));
+      if (sp !== last.speed) {
+        last.speed = sp;
+        speedText.textContent = `${sp} ups`;
+        const bar = Math.min(1, sp / 800);
+        if (Math.abs(bar - last.speedBar) > 0.001) {
+          last.speedBar = bar;
+          speedFill.style.transform = `scaleX(${bar.toFixed(4)})`;
+        }
+        const fast = sp > 320;
+        if (fast !== last.speedFast) {
+          last.speedFast = fast;
+          speedEl.classList.toggle('fast', fast);
+        }
+      }
+      // ping
+      const pg = Math.max(0, Math.round(s.ping));
+      if (pg !== last.ping) {
+        last.ping = pg;
+        pingEl.textContent = `PING ${pg}`;
+      }
+      // death state
+      if (s.alive !== last.alive) {
+        last.alive = s.alive;
+        vignetteEl.classList.toggle('ql-hidden', s.alive);
+        respawnEl.classList.toggle('ql-hidden', s.alive);
+        if (s.alive) last.respawnText = '';
+      }
+      if (!s.alive) {
+        const t = `RESPAWN IN ${(Math.max(0, s.respawnInMs) / 1000).toFixed(1)}s`;
+        if (t !== last.respawnText) {
+          last.respawnText = t;
+          respawnEl.textContent = t;
+        }
+      }
+    },
+
+    addKill(killerName, killerColorIdx, victimName, victimColorIdx, localInvolved): void {
+      const row = el('div', localInvolved ? 'ql-kill me' : 'ql-kill');
+      const k = el('span', undefined, row);
+      k.textContent = killerName;
+      k.style.color = colorHex(killerColorIdx);
+      const bolt = el('span', 'ql-bolt', row);
+      bolt.textContent = '⚡';
+      const v = el('span', undefined, row);
+      v.textContent = victimName;
+      v.style.color = colorHex(victimColorIdx);
+      feedEl.appendChild(row);
+      while (feedEl.children.length > 5) feedEl.firstElementChild?.remove();
+      window.setTimeout(() => {
+        row.classList.add('out');
+        window.setTimeout(() => row.remove(), 450);
+      }, 4000);
+    },
+
+    showMessage(text: string, ms: number): void {
+      msgEl.textContent = text;
+      msgEl.classList.add('show');
+      if (msgTimer !== null) window.clearTimeout(msgTimer);
+      msgTimer = window.setTimeout(() => {
+        msgEl.classList.remove('show');
+        msgTimer = null;
+      }, Math.max(0, ms));
+    },
+
+    setScoreboardVisible(v: boolean): void {
+      scoreEl.classList.toggle('ql-hidden', !v);
+    },
+
+    updateScoreboard(rows: ScoreRow[]): void {
+      const sorted = rows.slice().sort((a, b) => b.frags - a.frags || a.deaths - b.deaths);
+      const frag = document.createDocumentFragment();
+      for (const r of sorted) {
+        const tr = document.createElement('tr');
+        if (r.isLocal) tr.className = 'ql-row-local';
+        const avTd = el('td', undefined, tr);
+        if (r.avatarUrl) {
+          const img = el('img', 'ql-av', avTd);
+          img.alt = '';
+          img.onerror = () => {
+            img.replaceWith(fallbackAvatar(r.colorIdx, r.name));
+          };
+          img.src = r.avatarUrl;
+        } else {
+          avTd.appendChild(fallbackAvatar(r.colorIdx, r.name));
+        }
+        const nameTd = el('td', 'ql-name', tr);
+        nameTd.textContent = r.name;
+        nameTd.style.color = colorHex(r.colorIdx);
+        for (const n of [r.frags, r.deaths, r.ping]) {
+          const td = el('td', 'num', tr);
+          td.textContent = String(n);
+        }
+        frag.appendChild(tr);
+      }
+      scoreBody.replaceChildren(frag);
+    },
+
+    flash(cssColor: string, durationMs: number): void {
+      // a fresh element per call keeps overlapping flashes independent
+      const f = el('div', 'ql-flash', root);
+      f.style.background = cssColor;
+      f.style.transition = `opacity ${Math.max(16, durationMs)}ms ease-out`;
+      void f.offsetWidth; // flush so the transition actually runs
+      f.style.opacity = '0';
+      window.setTimeout(() => f.remove(), durationMs + 150);
+    },
+
+    setPauseVisible(v: boolean): void {
+      pauseEl.classList.toggle('ql-hidden', !v);
+    },
+
+    showMatchEnd(standings, restartInMs): void {
+      const sorted = standings.slice().sort((a, b) => b.frags - a.frags || a.deaths - b.deaths);
+
+      podiumEl.replaceChildren();
+      const top3 = sorted.slice(0, 3);
+      const ranks = ['1ST', '2ND', '3RD'];
+      // visual order: 2nd, 1st, 3rd (winner in the middle, raised)
+      const order = top3.length >= 2 ? [1, 0, 2] : [0];
+      for (const i of order) {
+        const s = top3[i];
+        if (!s) continue;
+        const pod = el('div', `ql-pod ql-pod-${i + 1}`, podiumEl);
+        const rank = el('div', 'rank', pod);
+        rank.textContent = ranks[i] ?? '';
+        const pname = el('div', 'pname', pod);
+        pname.textContent = s.name;
+        pname.style.color = colorHex(s.colorIdx);
+        const pfrags = el('div', 'pfrags', pod);
+        pfrags.textContent = String(s.frags);
+      }
+
+      const frag = document.createDocumentFragment();
+      sorted.forEach((s, i) => {
+        const tr = document.createElement('tr');
+        const rankTd = el('td', 'num', tr);
+        rankTd.textContent = String(i + 1);
+        const nameTd = el('td', 'ql-name', tr);
+        nameTd.textContent = s.name;
+        nameTd.style.color = colorHex(s.colorIdx);
+        const fragsTd = el('td', 'num', tr);
+        fragsTd.textContent = String(s.frags);
+        const deathsTd = el('td', 'num', tr);
+        deathsTd.textContent = String(s.deaths);
+        frag.appendChild(tr);
+      });
+      endBody.replaceChildren(frag);
+
+      const endAt = performance.now() + Math.max(0, restartInMs);
+      const update = (): void => {
+        const remS = Math.max(0, Math.ceil((endAt - performance.now()) / 1000));
+        const text = `NEXT MATCH IN ${remS}s`;
+        if (text !== lastEndCountText) {
+          lastEndCountText = text;
+          endCount.textContent = text;
+        }
+      };
+      if (endTimer !== null) window.clearInterval(endTimer);
+      lastEndCountText = '';
+      update();
+      endTimer = window.setInterval(update, 200);
+      endEl.classList.remove('ql-hidden');
+    },
+
+    hideMatchEnd(): void {
+      if (endTimer !== null) {
+        window.clearInterval(endTimer);
+        endTimer = null;
+      }
+      endEl.classList.add('ql-hidden');
+    },
+
+    setConnectionMessage(text: string): void {
+      document.getElementById('boot')?.remove();
+      if (text) {
+        connectText.textContent = text;
+        connectEl.classList.remove('ql-hidden');
+      } else {
+        connectEl.classList.add('ql-hidden');
+      }
+    },
+
+    getSettings(): Settings {
+      return { ...settings };
+    },
+  };
+};
