@@ -1,44 +1,22 @@
 // ---------------------------------------------------------------------------
-// Vortex Portal — faithful recreation of Quake Live's "vortexportal"
-// (originally Quake III: Team Arena mpteam6, id Software).
+// The Longest Yard - QuakeLite recreation of Quake III Arena's q3dm17.
 //
-// The real map is a SPACE FLOATER: three separate platform clusters hanging
-// in a starfield void — RED base (z<0), BLUE base (z>0) and a neutral
-// CENTRAL platform riding anti-grav thrusters at the origin, floating higher
-// than the bases. There is NO walkable route between clusters; the only
-// transit is the giant swirling vortex portals:
-//
-//   per base:  two FLANK portals (west/east pedestal stations) that teleport
-//              you straight to a drop above the ENEMY middle deck, and one
-//              floating MID portal above the flag deck that a launch pad
-//              throws you up into, exiting above the CENTRAL platform.
-//   central:   one portal back to EACH base (drop above its flag deck).
-//
-// Portal exits are airborne — you drop onto the destination deck, exactly
-// like the original. Every deck edge falls into killing void (the server
-// treats leaving MapDef.bounds as a suicide).
-//
-// Base anatomy (matching the original's HUD area names): a long top FLAG
-// deck (with the painted team emblem), a MIDDLE deck below it toward the map
-// center (the enemy drop-in zone), a separate RAIL wing platform, and a
-// small SCOUT platform below-right of the flag deck. Decks are thin slabs
-// with fascia sides and neon trim bands, hopped between on launch pads.
-//
-// Exact 180° rotational symmetry about the Y axis: the red half (plus the
-// north half of the central platform) is authored once and mirrored with
-// (x, z) -> (-x, -z), red<->blue accent swaps and yaw+PI rotations.
+// Geometry is prioritized over textures: a space-floater arena with a broad
+// lower base floor, two large upper landings joined by the armor bridge, side
+// rooms, mid platforms, a high power-up perch, and the isolated long railgun
+// platform reached by a risky launch across the void.
 // ---------------------------------------------------------------------------
 
-import { vec3, wrapAngle, type Vec3 } from '../math';
+import { vec3, type Vec3 } from '../math';
 import type {
-  MapDef,
   Brush,
-  PrismBrush,
-  MaterialName,
   JumpPadDef,
-  PortalDef,
-  SpawnDef,
   LightDef,
+  MapDef,
+  MaterialName,
+  PortalDef,
+  PrismBrush,
+  SpawnDef,
 } from '../mapdef';
 
 const PI = Math.PI;
@@ -64,444 +42,371 @@ function prism(
   return { verts: verts.map(([x, z]) => ({ x, z })), minY, maxY, mat };
 }
 
-// Red-side accents become blue-side accents in the mirrored half.
-const MAT_MIRROR: Partial<Record<MaterialName, MaterialName>> = {
-  trimRed: 'trimBlue',
-  trimBlue: 'trimRed',
-  glowRed: 'glowBlue',
-  glowBlue: 'glowRed',
-  emblemRed: 'emblemBlue',
-  emblemBlue: 'emblemRed',
-  triangleRed: 'triangleBlue',
-  triangleBlue: 'triangleRed',
-};
+function deck(verts: readonly (readonly [number, number])[], minY: number, topY: number): PrismBrush[] {
+  return [prism(verts, minY, topY - 8, 'wall'), prism(verts, topY - 8, topY, 'floor')];
+}
 
-// Team-tinted light colors swap with their counterpart; neutrals map to self.
-const LIGHT_MIRROR = new Map<number, number>([
-  [0xff5533, 0x3377ff],
-  [0x3377ff, 0xff5533],
-  [0xff6644, 0x4488ff],
-  [0x4488ff, 0xff6644],
-]);
-
-const mirrorVec = (v: Vec3): Vec3 => vec3(-v.x, v.y, -v.z);
-
-function mirrorBrush(b: Brush): Brush {
+function mirrorXBrush(b: Brush): Brush {
   return {
-    min: vec3(-b.max.x, b.min.y, -b.max.z),
-    max: vec3(-b.min.x, b.max.y, -b.min.z),
-    mat: MAT_MIRROR[b.mat] ?? b.mat,
+    min: vec3(-b.max.x, b.min.y, b.min.z),
+    max: vec3(-b.min.x, b.max.y, b.max.z),
+    mat: b.mat,
   };
 }
 
-function mirrorPrism(p: PrismBrush): PrismBrush {
+function mirrorXPrism(p: PrismBrush): PrismBrush {
   return {
-    verts: p.verts.map((v) => ({ x: -v.x, z: -v.z })),
+    verts: p.verts.map((v) => ({ x: -v.x, z: v.z })).reverse(),
     minY: p.minY,
     maxY: p.maxY,
-    mat: MAT_MIRROR[p.mat] ?? p.mat,
+    mat: p.mat,
   };
 }
 
-function mirrorPad(p: JumpPadDef): JumpPadDef {
+function mirrorXPad(p: JumpPadDef): JumpPadDef {
   return {
     trigger: {
-      min: vec3(-p.trigger.max.x, p.trigger.min.y, -p.trigger.max.z),
-      max: vec3(-p.trigger.min.x, p.trigger.max.y, -p.trigger.min.z),
+      min: vec3(-p.trigger.max.x, p.trigger.min.y, p.trigger.min.z),
+      max: vec3(-p.trigger.min.x, p.trigger.max.y, p.trigger.max.z),
     },
-    velocity: vec3(-p.velocity.x, p.velocity.y, -p.velocity.z),
-    padTop: mirrorVec(p.padTop),
+    velocity: vec3(-p.velocity.x, p.velocity.y, p.velocity.z),
+    padTop: vec3(-p.padTop.x, p.padTop.y, p.padTop.z),
   };
 }
 
-function mirrorPortal(p: PortalDef, idOffset: number): PortalDef {
+function mirrorXPortal(p: PortalDef, id: number): PortalDef {
   return {
-    id: p.id + idOffset,
+    id,
     trigger: {
-      min: vec3(-p.trigger.max.x, p.trigger.min.y, -p.trigger.max.z),
-      max: vec3(-p.trigger.min.x, p.trigger.max.y, -p.trigger.min.z),
+      min: vec3(-p.trigger.max.x, p.trigger.min.y, p.trigger.min.z),
+      max: vec3(-p.trigger.min.x, p.trigger.max.y, p.trigger.max.z),
     },
-    center: mirrorVec(p.center),
+    center: vec3(-p.center.x, p.center.y, p.center.z),
     radius: p.radius,
-    faceYaw: wrapAngle(p.faceYaw + PI),
-    exitPos: mirrorVec(p.exitPos),
-    exitYaw: wrapAngle(p.exitYaw + PI),
+    faceYaw: -p.faceYaw,
+    exitPos: vec3(-p.exitPos.x, p.exitPos.y, p.exitPos.z),
+    exitYaw: -p.exitYaw,
     accent: p.accent === 'red' ? 'blue' : 'red',
     ...(p.tilt !== undefined ? { tilt: p.tilt } : {}),
   };
 }
 
-function mirrorSpawn(s: SpawnDef): SpawnDef {
-  return { pos: mirrorVec(s.pos), yaw: wrapAngle(s.yaw + PI) };
+function mirrorXSpawn(s: SpawnDef): SpawnDef {
+  return { pos: vec3(-s.pos.x, s.pos.y, s.pos.z), yaw: -s.yaw };
 }
 
-function mirrorLight(l: LightDef): LightDef {
-  return {
-    pos: mirrorVec(l.pos),
-    color: LIGHT_MIRROR.get(l.color) ?? l.color,
-    intensity: l.intensity,
-    range: l.range,
-  };
+function mirrorXLight(l: LightDef): LightDef {
+  return { pos: vec3(-l.pos.x, l.pos.y, l.pos.z), color: l.color, intensity: l.intensity, range: l.range };
 }
 
-// ---------------------------------------------------------------------------
-// Authored half: RED base cluster + north half of the CENTRAL platform.
-// ---------------------------------------------------------------------------
-
-const half: Brush[] = [];
-const halfPrisms: PrismBrush[] = [];
-const halfDetails: Brush[] = [];
-
-// ==== RED FLAG DECK (top deck, surface y=160) ===============================
-// Clipped shield footprint: blunt north end, chamfered side noses, and a
-// narrowed southern drop lip.
-const flagDeck = [
-  [-448, -1896],
-  [448, -1896],
-  [448, -1816],
-  [520, -1744],
-  [520, -1552],
-  [416, -1400],
-  [-416, -1400],
-  [-520, -1552],
-  [-520, -1744],
-  [-448, -1816],
-] as const;
-halfPrisms.push(prism(flagDeck, 96, 152, 'wall'));
-halfPrisms.push(prism(flagDeck, 152, 160, 'floor'));
-// Grate strips running the deck's long axis (1u proud, walkable).
-half.push(box(-360, 160, -1864, -296, 161, -1432, 'floorAlt'));
-half.push(box(296, 160, -1864, 360, 161, -1432, 'floorAlt'));
-// Painted team emblem inlay (square so the decal isn't stretched).
-half.push(box(-96, 160, -1744, 96, 162, -1552, 'emblemRed'));
-// Mid launch pad housing (feeds the floating mid portal overhead).
-half.push(box(-36, 160, -1820, 36, 166, -1748, 'padBase'));
-
-// ==== RED MIDDLE DECK (surface y=0, toward map center) ======================
-const middleDeck = [
-  [-320, -1456],
-  [320, -1456],
-  [368, -1408],
-  [332, -1136],
-  [272, -1088],
-  [-272, -1088],
-  [-332, -1136],
-  [-368, -1408],
-] as const;
-halfPrisms.push(prism(middleDeck, -56, -8, 'wall'));
-halfPrisms.push(prism(middleDeck, -8, 0, 'floor'));
-// Launch pad housings: two up to the flag deck (kept well clear of the deck
-// edge so the 56u player box clears the trim band mid-arc), two out to the
-// flank stations.
-half.push(box(-188, 0, -1366, -116, 6, -1294, 'padBase'));
-half.push(box(116, 0, -1366, 188, 6, -1294, 'padBase'));
-half.push(box(-288, 0, -1336, -216, 6, -1264, 'padBase'));
-half.push(box(216, 0, -1336, 288, 6, -1264, 'padBase'));
-
-// ==== RED RAIL WING (separate platform west, surface y=80) ==================
-const railWing = [
-  [-832, -1816],
-  [-528, -1816],
-  [-472, -1760],
-  [-472, -1504],
-  [-528, -1456],
-  [-832, -1456],
-  [-872, -1504],
-  [-872, -1760],
-] as const;
-halfPrisms.push(prism(railWing, 24, 72, 'wall'));
-halfPrisms.push(prism(railWing, 72, 80, 'floor'));
-half.push(box(-676, 80, -1668, -604, 86, -1596, 'padBase')); // pad → flag deck
-half.push(box(-668, 80, -1740, -612, 81, -1684, 'metal')); // rail spawn grate
-
-// ==== RED SCOUT WING (small low platform east, surface y=16) ================
-const scoutWing = [
-  [416, -1712],
-  [636, -1712],
-  [704, -1648],
-  [704, -1464],
-  [648, -1408],
-  [472, -1408],
-  [424, -1480],
-  [392, -1608],
-] as const;
-halfPrisms.push(prism(scoutWing, -40, 8, 'wall'));
-halfPrisms.push(prism(scoutWing, 8, 16, 'floor'));
-half.push(box(524, 16, -1606, 596, 22, -1534, 'padBase')); // pad → flag deck
-
-// ==== RED FLANK PORTAL STATIONS (west + east, surface y=64) =================
-// West station: pedestal deck + upright billboard-gate housing facing east.
-const westStation = [
-  [-760, -1440],
-  [-520, -1440],
-  [-472, -1392],
-  [-472, -1240],
-  [-520, -1192],
-  [-720, -1192],
-  [-760, -1264],
-] as const;
-const eastStation = [
-  [520, -1440],
-  [760, -1440],
-  [760, -1264],
-  [720, -1192],
-  [520, -1192],
-  [472, -1240],
-  [472, -1392],
-] as const;
-halfPrisms.push(prism(westStation, 16, 56, 'wall'));
-halfPrisms.push(prism(westStation, 56, 64, 'floor'));
-halfPrisms.push(prism(eastStation, 16, 56, 'wall'));
-halfPrisms.push(prism(eastStation, 56, 64, 'floor'));
-half.push(box(-688, 64, -1392, -672, 280, -1248, 'portalFrame')); // back panel
-half.push(box(-672, 64, -1392, -656, 248, -1368, 'portalFrame')); // north col
-half.push(box(-672, 64, -1272, -656, 248, -1248, 'portalFrame')); // south col
-half.push(box(-672, 232, -1368, -656, 264, -1272, 'portalFrame')); // lintel
-half.push(box(-672, 64, -1368, -656, 70, -1272, 'glowRed')); // sill glow strip
-// East station (authored too — the map mirror makes the BLUE pair).
-half.push(box(672, 64, -1392, 688, 280, -1248, 'portalFrame'));
-half.push(box(656, 64, -1392, 672, 248, -1368, 'portalFrame'));
-half.push(box(656, 64, -1272, 672, 248, -1248, 'portalFrame'));
-half.push(box(656, 232, -1368, 672, 264, -1272, 'portalFrame'));
-half.push(box(656, 64, -1368, 672, 70, -1272, 'glowRed'));
-
-// ==== CENTRAL PLATFORM, north half (neutral, surface y=352) =================
-// Core (authored z<0 half; the mirror completes it, flush at z=0).
-const centralNorth = [
-  [-160, -336],
-  [160, -336],
-  [240, -288],
-  [352, -176],
-  [352, 0],
-  [-352, 0],
-  [-352, -176],
-  [-240, -288],
-] as const;
-const centralNorthStation = [
-  [-120, -448],
-  [120, -448],
-  [152, -400],
-  [128, -304],
-  [-128, -304],
-  [-152, -400],
-] as const;
-halfPrisms.push(prism(centralNorth, 304, 344, 'wall'));
-halfPrisms.push(prism(centralNorth, 344, 352, 'floor'));
-halfPrisms.push(prism(centralNorthStation, 304, 344, 'wall'));
-halfPrisms.push(prism(centralNorthStation, 344, 352, 'floor'));
-// Powerup pedestal at the very center (mirror completes the +z half).
-half.push(box(-28, 352, -28, 28, 372, 0, 'pillar'));
-half.push(box(-24, 372, -24, 24, 378, 0, 'glowWhite'));
-// Hop pad toward the north portal station.
-half.push(box(-116, 352, -168, -44, 358, -96, 'padBase'));
-// North portal station: jutting deck + housing facing the platform.
-half.push(box(-88, 352, -404, 88, 568, -388, 'portalFrame')); // back panel
-half.push(box(-88, 352, -388, -72, 536, -372, 'portalFrame')); // west col
-half.push(box(72, 352, -388, 88, 536, -372, 'portalFrame')); // east col
-half.push(box(-72, 520, -388, 72, 552, -372, 'portalFrame')); // lintel
-half.push(box(-72, 352, -388, 72, 358, -372, 'glowRed')); // sill glow
+const brushes: Brush[] = [];
+const prisms: PrismBrush[] = [];
+const details: Brush[] = [];
 
 // ---------------------------------------------------------------------------
-// Render-only Quake Live detail layer. These thin decals and lips are kept
-// out of collision so the VQ3 movement tests stay tied to the authored solids.
+// Lower base floor and side rooms.
 // ---------------------------------------------------------------------------
 
-// Flag deck: black runway slots, orange title lettering, triangular team mark
-// and a bright cyan-white edge lip from the Quake Live levelshot.
-halfDetails.push(box(-34, 162.4, -1848, -18, 163.4, -1450, 'stripeDark'));
-halfDetails.push(box(18, 162.4, -1848, 34, 163.4, -1450, 'stripeDark'));
-halfDetails.push(box(112, 162.8, -1740, 352, 163.8, -1544, 'titleMark'));
-halfDetails.push(box(-382, 162.8, -1548, -270, 163.8, -1436, 'triangleRed'));
+const baseFloor = [
+  [-560, -520],
+  [560, -520],
+  [680, -360],
+  [680, 320],
+  [520, 520],
+  [-520, 520],
+  [-680, 320],
+  [-680, -360],
+] as const;
+prisms.push(...deck(baseFloor, -64, 0));
 
-// Middle deck drop zone: the same inset grooves and team identifier markings
-// visible around the Vortex Portal lower platforms.
-halfDetails.push(box(-28, 2, -1392, -14, 3, -1140, 'stripeDark'));
-halfDetails.push(box(14, 2, -1392, 28, 3, -1140, 'stripeDark'));
-halfDetails.push(box(70, 2.4, -1352, 270, 3.4, -1196, 'titleMark'));
-halfDetails.push(box(-258, 2.4, -1406, -166, 3.4, -1314, 'triangleRed'));
+const leftRoom = [
+  [-1040, -300],
+  [-680, -300],
+  [-680, 300],
+  [-1040, 300],
+] as const;
+prisms.push(...deck(leftRoom, -56, 0), ...deck(leftRoom, -56, 0).map(mirrorXPrism));
 
-// Wing platform team triangles sit safely inside the clipped side decks.
-halfDetails.push(box(-764, 82, -1534, -692, 83, -1462, 'triangleRed'));
-
-// Portal station face cards: ornate blue/copper panels behind the swirl discs.
-halfDetails.push(box(-655.5, 78, -1380, -654.5, 248, -1260, 'portalCircuit'));
-halfDetails.push(box(654.5, 78, -1380, 655.5, 248, -1260, 'portalCircuit'));
-halfDetails.push(box(-76, 366, -371.5, 76, 536, -370.5, 'portalCircuit'));
-
-// Central platform paired black insets make the high thruster deck read like
-// the QL center platform from the levelshot.
-halfDetails.push(box(-120, 354, -248, -104, 355, -28, 'stripeDark'));
-halfDetails.push(box(104, 354, -248, 120, 355, -28, 'stripeDark'));
-
-// Freestanding side billboard and mast. The reference levelshot has a large
-// vertical Quake Live sign just off the deck edge with a lit support pole.
-halfDetails.push(box(920, 56, -1860, 936, 536, -1380, 'qlSign'));
-halfDetails.push(box(944, -46, -1644, 968, 560, -1604, 'pillar'));
-halfDetails.push(box(940, -70, -1656, 972, -46, -1592, 'glowWhite'));
-
-const brushes: Brush[] = [...half, ...half.map(mirrorBrush)];
-const prisms: PrismBrush[] = [...halfPrisms, ...halfPrisms.map(mirrorPrism)];
-const details: Brush[] = [...halfDetails, ...halfDetails.map(mirrorBrush)];
+// Side-room partial covers, low enough to shoot over but useful as geometry.
+brushes.push(box(-1040, 0, -300, -1000, 160, 300, 'wallDark'));
+brushes.push(box(-1040, 128, -300, -680, 160, -260, 'wallDark'));
+brushes.push(box(-1040, 128, 260, -680, 160, 300, 'wallDark'));
+brushes.push(...brushes.map(mirrorXBrush));
 
 // ---------------------------------------------------------------------------
-// Launch pads (authored red/north set; mirrored for blue/south).
+// Upper landings, armor bridge, mid platforms, rail platform, power-up perch.
 // ---------------------------------------------------------------------------
 
-const halfPads: JumpPadDef[] = [
-  // Flag-deck mid pad: throws the player up through the floating mid portal.
+const upperLeft = [
+  [-1260, -460],
+  [-560, -460],
+  [-480, -360],
+  [-480, 360],
+  [-560, 500],
+  [-1180, 500],
+  [-1280, 340],
+  [-1280, -340],
+] as const;
+prisms.push(...deck(upperLeft, 128, 192), ...deck(upperLeft, 128, 192).map(mirrorXPrism));
+
+const armorBridge = [
+  [-520, 340],
+  [520, 340],
+  [520, 500],
+  [-520, 500],
+] as const;
+prisms.push(...deck(armorBridge, 144, 192));
+
+const leftMidFront = [
+  [-1120, -980],
+  [-780, -980],
+  [-700, -900],
+  [-700, -620],
+  [-780, -540],
+  [-1120, -540],
+  [-1200, -620],
+  [-1200, -900],
+] as const;
+const leftMidBack = [
+  [-1120, 720],
+  [-780, 720],
+  [-700, 800],
+  [-700, 1080],
+  [-780, 1160],
+  [-1120, 1160],
+  [-1200, 1080],
+  [-1200, 800],
+] as const;
+prisms.push(
+  ...deck(leftMidFront, 64, 128),
+  ...deck(leftMidFront, 64, 128).map(mirrorXPrism),
+  ...deck(leftMidBack, 64, 128),
+  ...deck(leftMidBack, 64, 128).map(mirrorXPrism),
+);
+
+const railPlatform = [
+  [-360, -1600],
+  [360, -1600],
+  [480, -1480],
+  [480, -1220],
+  [360, -1100],
+  [-360, -1100],
+  [-480, -1220],
+  [-480, -1480],
+] as const;
+prisms.push(...deck(railPlatform, 32, 96));
+
+const railCatwalk = [
+  [-96, -900],
+  [96, -900],
+  [96, -520],
+  [-96, -520],
+] as const;
+prisms.push(...deck(railCatwalk, 0, 48));
+
+const powerPlatform = [
+  [-170, 660],
+  [170, 660],
+  [220, 710],
+  [220, 870],
+  [170, 920],
+  [-170, 920],
+  [-220, 870],
+  [-220, 710],
+] as const;
+prisms.push(...deck(powerPlatform, 512, 560));
+
+// Thin visual plates for pad housings, bridge insets, and the far rail porch.
+details.push(box(-460, 1, -420, 460, 2, -360, 'stripeDark'));
+details.push(box(-90, 193, 360, 90, 194, 480, 'emblemRed'));
+details.push(box(-80, 561, 730, 80, 562, 850, 'emblemBlue'));
+details.push(box(-100, 97, -1510, 100, 98, -1390, 'titleMark'));
+
+// Pad bases: lower complex, catwalk-to-rail, upper/mid transfer pads, rail returns.
+brushes.push(box(-56, 0, -56, 56, 8, 56, 'padBase')); // high power-up
+brushes.push(box(-248, 0, 64, -168, 8, 144, 'padBase')); // upper left
+brushes.push(box(168, 0, 64, 248, 8, 144, 'padBase')); // upper right
+brushes.push(box(-56, 0, -220, 56, 8, -140, 'padBase')); // armor bridge
+brushes.push(box(-56, 48, -860, 56, 56, -780, 'padBase')); // rail
+brushes.push(box(-1090, 192, 320, -1010, 200, 400, 'padBase')); // left upper to front mid
+brushes.push(box(1010, 192, 320, 1090, 200, 400, 'padBase')); // right upper to front mid
+brushes.push(box(-960, 128, -890, -880, 136, -810, 'padBase')); // front mid back to upper
+brushes.push(box(880, 128, -890, 960, 136, -810, 'padBase'));
+brushes.push(box(-960, 128, 810, -880, 136, 890, 'padBase')); // rear mid back to upper
+brushes.push(box(880, 128, 810, 960, 136, 890, 'padBase'));
+brushes.push(box(-210, 96, -1500, -130, 104, -1420, 'padBase')); // rail return left
+brushes.push(box(130, 96, -1500, 210, 104, -1420, 'padBase')); // rail return right
+
+// Teleporter frames on the two upper landings and the power-up perch.
+brushes.push(box(-1276, 192, 140, -1252, 392, 300, 'portalFrame'));
+brushes.push(box(-1252, 192, 140, -1228, 360, 164, 'portalFrame'));
+brushes.push(box(-1252, 192, 276, -1228, 360, 300, 'portalFrame'));
+brushes.push(box(-1252, 344, 164, -1228, 384, 276, 'portalFrame'));
+brushes.push(box(1252, 192, 140, 1276, 392, 300, 'portalFrame'));
+brushes.push(box(1228, 192, 140, 1252, 360, 164, 'portalFrame'));
+brushes.push(box(1228, 192, 276, 1252, 360, 300, 'portalFrame'));
+brushes.push(box(1228, 344, 164, 1252, 384, 276, 'portalFrame'));
+brushes.push(box(196, 560, 700, 220, 744, 880, 'portalFrame'));
+
+// ---------------------------------------------------------------------------
+// Jump pads and teleporters.
+// ---------------------------------------------------------------------------
+
+const jumpPads: JumpPadDef[] = [
   {
-    trigger: { min: vec3(-36, 158, -1820), max: vec3(36, 198, -1748) },
-    velocity: vec3(0, 700, 0),
-    padTop: vec3(0, 166, -1784),
+    trigger: { min: vec3(-56, -2, -56), max: vec3(56, 44, 56) },
+    velocity: vec3(0, 1010, 450),
+    padTop: vec3(0, 8, 0),
   },
-  // Middle deck → flag deck (west + east pads).
   {
-    trigger: { min: vec3(-188, -2, -1366), max: vec3(-116, 38, -1294) },
-    velocity: vec3(0, 600, -160),
-    padTop: vec3(-152, 6, -1330),
+    trigger: { min: vec3(-248, -2, 64), max: vec3(-168, 44, 144) },
+    velocity: vec3(-450, 635, 250),
+    padTop: vec3(-208, 8, 104),
   },
   {
-    trigger: { min: vec3(116, -2, -1366), max: vec3(188, 38, -1294) },
-    velocity: vec3(0, 600, -160),
-    padTop: vec3(152, 6, -1330),
-  },
-  // Middle deck → west / east flank portal stations (crosses a void gap).
-  {
-    trigger: { min: vec3(-288, -2, -1336), max: vec3(-216, 38, -1264) },
-    velocity: vec3(-360, 445, 0),
-    padTop: vec3(-252, 6, -1300),
+    trigger: { min: vec3(168, -2, 64), max: vec3(248, 44, 144) },
+    velocity: vec3(450, 635, 250),
+    padTop: vec3(208, 8, 104),
   },
   {
-    trigger: { min: vec3(216, -2, -1336), max: vec3(288, 38, -1264) },
-    velocity: vec3(360, 445, 0),
-    padTop: vec3(252, 6, -1300),
+    trigger: { min: vec3(-56, -2, -220), max: vec3(56, 44, -140) },
+    velocity: vec3(0, 660, 420),
+    padTop: vec3(0, 8, -180),
   },
-  // Rail wing → flag deck.
   {
-    trigger: { min: vec3(-676, 78, -1668), max: vec3(-604, 118, -1596) },
-    velocity: vec3(280, 473, 0),
-    padTop: vec3(-640, 86, -1632),
+    trigger: { min: vec3(-56, 46, -860), max: vec3(56, 92, -780) },
+    velocity: vec3(0, 670, -330),
+    padTop: vec3(0, 56, -820),
   },
-  // Scout wing → flag deck.
   {
-    trigger: { min: vec3(524, 14, -1606), max: vec3(596, 54, -1534) },
-    velocity: vec3(-170, 566, 0),
-    padTop: vec3(560, 22, -1570),
+    trigger: { min: vec3(-1090, 190, 320), max: vec3(-1010, 236, 400) },
+    velocity: vec3(90, 560, -650),
+    padTop: vec3(-1050, 200, 360),
   },
-  // Central platform hop toward the north portal station (lands just short
-  // of the gate so it never feeds the portal by itself).
   {
-    trigger: { min: vec3(-116, 350, -168), max: vec3(-44, 390, -96) },
-    velocity: vec3(0, 460, -140),
-    padTop: vec3(-80, 358, -132),
+    trigger: { min: vec3(1010, 190, 320), max: vec3(1090, 236, 400) },
+    velocity: vec3(-90, 560, -650),
+    padTop: vec3(1050, 200, 360),
+  },
+  {
+    trigger: { min: vec3(-960, 126, -890), max: vec3(-880, 172, -810) },
+    velocity: vec3(-20, 520, 520),
+    padTop: vec3(-920, 136, -850),
+  },
+  {
+    trigger: { min: vec3(880, 126, -890), max: vec3(960, 172, -810) },
+    velocity: vec3(20, 520, 520),
+    padTop: vec3(920, 136, -850),
+  },
+  {
+    trigger: { min: vec3(-960, 126, 810), max: vec3(-880, 172, 890) },
+    velocity: vec3(0, 520, -500),
+    padTop: vec3(-920, 136, 850),
+  },
+  {
+    trigger: { min: vec3(880, 126, 810), max: vec3(960, 172, 890) },
+    velocity: vec3(0, 520, -500),
+    padTop: vec3(920, 136, 850),
+  },
+  {
+    trigger: { min: vec3(-210, 94, -1500), max: vec3(-130, 140, -1420) },
+    velocity: vec3(-300, 940, 740),
+    padTop: vec3(-170, 104, -1460),
+  },
+  {
+    trigger: { min: vec3(130, 94, -1500), max: vec3(210, 140, -1420) },
+    velocity: vec3(300, 940, 740),
+    padTop: vec3(170, 104, -1460),
   },
 ];
 
-const jumpPads: JumpPadDef[] = [...halfPads, ...halfPads.map(mirrorPad)];
-
-// ---------------------------------------------------------------------------
-// Portals. Authored ids 0..3 (red flanks, red mid, central->red); the mirror
-// adds 4..7 (blue flanks, blue mid, central->blue).
-// ---------------------------------------------------------------------------
-
-const halfPortals: PortalDef[] = [
-  // 0: RED WEST FLANK — run west into the gate, drop above BLUE middle deck
-  // moving east (toward that deck's center).
+const portals: PortalDef[] = [
   {
     id: 0,
-    trigger: { min: vec3(-672, 64, -1360), max: vec3(-640, 240, -1280) },
-    center: vec3(-666, 152, -1320),
-    radius: 56,
-    faceYaw: -PI / 2, // front normal +x, facing the approach
-    exitPos: vec3(-144, 140, 1264),
-    exitYaw: -PI / 2, // exit travelling +x
-    accent: 'red',
-    tilt: 0.22,
-  },
-  // 1: RED EAST FLANK — mirror-in-base of 0; drops above BLUE middle deck
-  // east half moving west.
-  {
-    id: 1,
-    trigger: { min: vec3(640, 64, -1360), max: vec3(672, 240, -1280) },
-    center: vec3(666, 152, -1320),
-    radius: 56,
-    faceYaw: PI / 2,
-    exitPos: vec3(144, 140, 1264),
-    exitYaw: PI / 2,
-    accent: 'red',
-    tilt: 0.22,
-  },
-  // 2: RED MID — floating disc above the flag deck's launch pad; exits in a
-  // high drop over the central platform.
-  {
-    id: 2,
-    trigger: { min: vec3(-72, 380, -1820), max: vec3(72, 460, -1748) },
-    center: vec3(0, 420, -1784),
-    radius: 64,
-    faceYaw: PI, // faces the map center
-    exitPos: vec3(0, 470, -120),
-    exitYaw: PI,
-    accent: 'red',
-  },
-  // 3: CENTRAL NORTH — on the north station, drops above the RED flag deck
-  // moving east along the deck's long axis.
-  {
-    id: 3,
-    trigger: { min: vec3(-72, 352, -388), max: vec3(72, 536, -356) },
-    center: vec3(0, 448, -386),
-    radius: 64,
-    faceYaw: PI,
-    exitPos: vec3(0, 290, -1648),
+    trigger: { min: vec3(-1268, 200, 164), max: vec3(-1218, 360, 276) },
+    center: vec3(-1250, 282, 220),
+    radius: 58,
+    faceYaw: -PI / 2,
+    exitPos: vec3(-80, 260, 420),
     exitYaw: -PI / 2,
     accent: 'red',
-    tilt: 0.18,
+    tilt: 0.12,
+  },
+  mirrorXPortal(
+    {
+      id: 0,
+      trigger: { min: vec3(-1268, 200, 164), max: vec3(-1218, 360, 276) },
+      center: vec3(-1250, 282, 220),
+      radius: 58,
+      faceYaw: -PI / 2,
+      exitPos: vec3(-80, 260, 420),
+      exitYaw: -PI / 2,
+      accent: 'red',
+      tilt: 0.12,
+    },
+    1,
+  ),
+  {
+    id: 2,
+    trigger: { min: vec3(160, 560, 720), max: vec3(228, 720, 860) },
+    center: vec3(208, 640, 790),
+    radius: 54,
+    faceYaw: PI / 2,
+    exitPos: vec3(0, 260, 420),
+    exitYaw: PI,
+    accent: 'blue',
+    tilt: 0.1,
   },
 ];
 
-const portals: PortalDef[] = [...halfPortals, ...halfPortals.map((p) => mirrorPortal(p, 4))];
-
 // ---------------------------------------------------------------------------
-// Spawns (6 authored → 12 total), lights, thrusters.
+// Spawns, lights, and anti-grav thrusters.
 // ---------------------------------------------------------------------------
 
 const halfSpawns: SpawnDef[] = [
-  { pos: vec3(-260, 160.25, -1648), yaw: -PI / 2 }, // flag deck west, facing east
-  { pos: vec3(260, 160.25, -1648), yaw: PI / 2 }, // flag deck east, facing west
-  { pos: vec3(0, 0.25, -1180), yaw: 0 }, // middle deck, facing own base
-  { pos: vec3(-640, 80.25, -1560), yaw: -PI / 2 }, // rail wing
-  { pos: vec3(620, 16.25, -1480), yaw: PI / 2 }, // scout wing
-  { pos: vec3(160, 352.25, -80), yaw: PI / 2 }, // central, facing the pedestal
+  { pos: vec3(-320, 0.25, -260), yaw: PI / 4 },
+  { pos: vec3(-860, 0.25, -60), yaw: 0 },
+  { pos: vec3(-920, 128.25, -760), yaw: PI / 4 },
+  { pos: vec3(-920, 192.25, 250), yaw: PI / 2 },
+  { pos: vec3(-920, 128.25, 940), yaw: -PI / 4 },
 ];
-const spawns: SpawnDef[] = [...halfSpawns, ...halfSpawns.map(mirrorSpawn)];
+const spawns: SpawnDef[] = [
+  ...halfSpawns,
+  ...halfSpawns.map(mirrorXSpawn),
+  { pos: vec3(0, 96.25, -1380), yaw: 0 },
+  { pos: vec3(0, 192.25, 420), yaw: PI },
+];
 
 const halfLights: LightDef[] = [
-  { pos: vec3(0, 560, -1648), color: 0xdfe8ff, intensity: 1.1, range: 1400 }, // flag deck fill
-  { pos: vec3(0, 300, -1264), color: 0xcfdcff, intensity: 0.9, range: 900 }, // middle deck fill
-  { pos: vec3(-640, 320, -1632), color: 0xcfdcff, intensity: 0.7, range: 600 }, // rail wing fill
-  { pos: vec3(-620, 200, -1320), color: 0xff5533, intensity: 1.2, range: 500 }, // W flank accent
-  { pos: vec3(620, 200, -1320), color: 0xff5533, intensity: 1.2, range: 500 }, // E flank accent
-  { pos: vec3(0, 480, -1784), color: 0x66ccff, intensity: 1.3, range: 600 }, // mid portal glow
-  { pos: vec3(0, 620, -180), color: 0xe6eeff, intensity: 1.0, range: 1000 }, // central fill
-  { pos: vec3(0, 460, -340), color: 0xff6644, intensity: 1.1, range: 450 }, // N station accent
-  { pos: vec3(0, 250, -60), color: 0xb088ff, intensity: 1.4, range: 700 }, // under-central violet
+  { pos: vec3(-380, 300, 0), color: 0xe7e2d7, intensity: 0.9, range: 1000 },
+  { pos: vec3(-900, 430, 260), color: 0xd8e4ff, intensity: 0.9, range: 900 },
+  { pos: vec3(-940, 320, -760), color: 0xd8e4ff, intensity: 0.7, range: 700 },
+  { pos: vec3(-1250, 300, 220), color: 0xff6644, intensity: 1.1, range: 460 },
 ];
-const lights: LightDef[] = [...halfLights, ...halfLights.map(mirrorLight)];
-
-const halfThrusters: Vec3[] = [
-  vec3(-140, 286, -140), // central (NW + NE authored; mirror adds the south pair)
-  vec3(140, 286, -140),
-  vec3(-240, 70, -1648), // under the red flag deck
-  vec3(240, 70, -1648),
-  vec3(0, -70, -1264), // under the red middle deck
-  vec3(-640, 0, -1632), // under the rail wing
+const lights: LightDef[] = [
+  ...halfLights,
+  ...halfLights.map(mirrorXLight),
+  { pos: vec3(0, 360, -120), color: 0xe8e0d0, intensity: 1.0, range: 1200 },
+  { pos: vec3(0, 360, -1320), color: 0xcfe0ff, intensity: 0.8, range: 900 },
+  { pos: vec3(0, 700, 780), color: 0x88ccff, intensity: 1.0, range: 700 },
 ];
-const thrusters: Vec3[] = [...halfThrusters, ...halfThrusters.map(mirrorVec)];
 
-// ---------------------------------------------------------------------------
+const thrusters: Vec3[] = [
+  vec3(-420, -88, -320),
+  vec3(420, -88, -320),
+  vec3(-420, -88, 320),
+  vec3(420, -88, 320),
+  vec3(-960, 106, 320),
+  vec3(960, 106, 320),
+  vec3(-920, 42, -760),
+  vec3(920, 42, -760),
+  vec3(0, 6, -1360),
+  vec3(0, 486, 780),
+];
 
 export const vortexPortal: MapDef = {
-  name: 'vortexportal',
-  displayName: 'Vortex Portal',
+  name: 'longestyard',
+  displayName: 'The Longest Yard',
   brushes,
   prisms,
   details,
@@ -509,10 +414,10 @@ export const vortexPortal: MapDef = {
   portals,
   spawns,
   lights,
-  ambient: 0.5,
+  ambient: 0.48,
   fogColor: 0x05060c,
-  fogDensity: 0, // open space — no fog
-  bounds: { min: vec3(-1400, -560, -2100), max: vec3(1400, 1100, 2100) },
+  fogDensity: 0,
+  bounds: { min: vec3(-1700, -620, -1900), max: vec3(1700, 1150, 1300) },
   space: true,
   thrusters,
 };

@@ -81,7 +81,7 @@ export async function initDiscord(): Promise<DiscordContext> {
         .setActivity({
           activity: {
             type: 0,
-            details: 'Fragging in Vortex Portal',
+            details: 'Fragging in The Longest Yard',
             state: `${frags} frag${frags === 1 ? '' : 's'}`,
           },
         })

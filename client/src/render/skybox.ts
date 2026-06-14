@@ -1,6 +1,6 @@
 // Space-floater sky for `map.space` maps: a huge inward-facing starfield
-// sphere (procedural canvas — thousands of stars, a violet nebula on one side
-// and a fiery orange one opposite, per the Q3TA/QL Vortex Portal levelshots)
+// sphere (procedural canvas - thousands of stars, a violet nebula on one side
+// and a fiery orange one opposite)
 // plus a big Mars-like planet hanging clearly BELOW deck level so it appears
 // when players look over the edges. The whole group follows the camera each
 // frame so the sky reads as infinitely far away; nothing here writes depth,
@@ -72,8 +72,8 @@ function starfieldTexture(): THREE.CanvasTexture {
   ctx.fillStyle = '#020309';
   ctx.fillRect(0, 0, w, h);
 
-  // Violet nebula on one side, fiery orange opposite (mpteam6 levelshot /
-  // q3ta_vp_hq1 palette; QL keeps them faint behind the black starfield).
+  // Violet nebula on one side, fiery orange opposite, kept faint behind the
+  // black starfield.
   paintNebula(ctx, rand, w * 0.26, h * 0.42, 300, [
     [120, 70, 190],
     [160, 100, 220],

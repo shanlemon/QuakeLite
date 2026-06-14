@@ -272,7 +272,7 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
   const scoreEl = el('div', 'ql-score ql-hidden', root);
   const scorePanel = el('div', 'ql-score-panel', scoreEl);
   const scoreTitle = el('div', 'ql-score-title', scorePanel);
-  scoreTitle.textContent = 'VORTEX PORTAL — FREE FOR ALL';
+  scoreTitle.textContent = 'THE LONGEST YARD - FREE FOR ALL';
   const scoreTable = el('table', 'ql-table', scorePanel);
   const scoreHead = el('thead', undefined, scoreTable);
   {
@@ -303,7 +303,7 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
   const titleEl = el('div', 'ql-title', pausePanel);
   titleEl.textContent = 'QUAKELITE';
   const subEl = el('div', 'ql-sub', pausePanel);
-  subEl.textContent = 'Vortex Portal — Instagib FFA';
+  subEl.textContent = 'The Longest Yard - Instagib FFA';
   const resumeBtn = el('button', 'ql-btn', pausePanel);
   resumeBtn.type = 'button';
   resumeBtn.textContent = 'CLICK TO RESUME';

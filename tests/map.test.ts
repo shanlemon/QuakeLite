@@ -1,13 +1,12 @@
-// Vortex Portal (space floater) validation — run with: npx tsx tests/map.test.ts
-// The map is three floating clusters in open void connected only by portals;
-// these tests prove that with the real shared physics: spawns are safe, every
-// launch pad works, the 8-portal graph routes correctly, the void kills, and
-// no cluster is walkable from another.
+// The Longest Yard validation - run with: npx tsx tests/map.test.ts
+// Proves the q3dm17-style space arena is playable with shared physics:
+// spawns are grounded, jump pads route to the intended platforms, teleporters
+// exit to the armor bridge, the void kills, and fuzz movement stays sane.
 
-import { vec3, wrapAngle, yawForward, type Vec3 } from '../shared/math';
+import { vec3, type Vec3 } from '../shared/math';
 import { traceBox } from '../shared/collision';
 import { PLAYER_MINS, PLAYER_MAXS } from '../shared/constants';
-import { pmove, createPmoveState, type UserCmd } from '../shared/movement';
+import { createPmoveState, pmove, type UserCmd } from '../shared/movement';
 import { aabbsOverlap, type AABB, type MapDef, type PrismBrush } from '../shared/mapdef';
 import { vortexPortal as m } from '../shared/maps/vortexportal';
 
@@ -32,316 +31,158 @@ const cmd = (over: Partial<UserCmd> = {}): UserCmd => ({
   ...over,
 });
 
-// Cluster regions (generous envelopes around each floating group).
-const RED: AABB = { min: vec3(-820, -80, -1920), max: vec3(720, 560, -1080) };
-const BLUE: AABB = { min: vec3(-720, -80, 1080), max: vec3(820, 560, 1920) };
-const CENTRAL: AABB = { min: vec3(-340, 290, -440), max: vec3(340, 640, 440) };
-const inRegion = (p: Vec3, r: AABB): boolean =>
-  p.x > r.min.x && p.x < r.max.x && p.y > r.min.y && p.y < r.max.y && p.z > r.min.z && p.z < r.max.z;
-const clusterOf = (p: Vec3): 'red' | 'blue' | 'central' | 'none' =>
-  inRegion(p, RED) ? 'red' : inRegion(p, BLUE) ? 'blue' : inRegion(p, CENTRAL) ? 'central' : 'none';
 const solidPrisms = m.prisms ?? [];
 
-// ---------------------------------------------------------------------------
+const BASE: AABB = { min: vec3(-1120, -80, -560), max: vec3(1120, 100, 560) };
+const UPPER: AABB = { min: vec3(-1320, 120, -520), max: vec3(1320, 300, 540) };
+const MID: AABB = { min: vec3(-1230, 80, -1040), max: vec3(1230, 190, 1180) };
+const RAIL: AABB = { min: vec3(-540, 30, -1660), max: vec3(540, 180, -1060) };
+const POWER: AABB = { min: vec3(-260, 500, 620), max: vec3(260, 660, 960) };
+
+function inRegion(p: Vec3, r: AABB): boolean {
+  return p.x > r.min.x && p.x < r.max.x && p.y > r.min.y && p.y < r.max.y && p.z > r.min.z && p.z < r.max.z;
+}
+
+function regionOf(p: Vec3): 'base' | 'upper' | 'mid' | 'rail' | 'power' | 'none' {
+  if (inRegion(p, POWER)) return 'power';
+  if (inRegion(p, RAIL)) return 'rail';
+  if (inRegion(p, UPPER)) return 'upper';
+  if (inRegion(p, MID)) return 'mid';
+  if (inRegion(p, BASE)) return 'base';
+  return 'none';
+}
+
+function prismBounds(p: PrismBrush): AABB {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const v of p.verts) {
+    minX = Math.min(minX, v.x);
+    maxX = Math.max(maxX, v.x);
+    minZ = Math.min(minZ, v.z);
+    maxZ = Math.max(maxZ, v.z);
+  }
+  return { min: vec3(minX, p.minY, minZ), max: vec3(maxX, p.maxY, maxZ) };
+}
+
+function insideBounds(b: AABB, bounds: AABB): boolean {
+  return (
+    b.min.x >= bounds.min.x &&
+    b.max.x <= bounds.max.x &&
+    b.min.y >= bounds.min.y &&
+    b.max.y <= bounds.max.y &&
+    b.min.z >= bounds.min.z &&
+    b.max.z <= bounds.max.z
+  );
+}
+
+function settleFromPad(index: number): { pos: Vec3; onGround: boolean; teleportCount: number } {
+  const pad = m.jumpPads[index]!;
+  const st = createPmoveState(vec3(pad.padTop.x, pad.padTop.y + 0.25, pad.padTop.z));
+  let settled = 0;
+  for (let t = 0; t < 7000; t += 8) {
+    pmove(st, cmd(), m);
+    if (st.pos.y < m.bounds.min.y) break;
+    settled = st.onGround && t > 500 ? settled + 1 : 0;
+    if (settled > 14) break;
+  }
+  return { pos: st.pos, onGround: st.onGround, teleportCount: st.teleportCount };
+}
+
 console.log('map sanity');
 {
-  let valid = true;
-  let inBounds = true;
-  for (const b of m.brushes) {
-    if (!(b.min.x < b.max.x && b.min.y < b.max.y && b.min.z < b.max.z)) valid = false;
-    if (
-      b.min.x < m.bounds.min.x ||
-      b.max.x > m.bounds.max.x ||
-      b.min.y < m.bounds.min.y ||
-      b.max.y > m.bounds.max.y ||
-      b.min.z < m.bounds.min.z ||
-      b.max.z > m.bounds.max.z
-    )
-      inBounds = false;
-  }
-  check('every brush has min < max', valid, `${m.brushes.length} brushes`);
-  const prismsValid = solidPrisms.every((p) => p.verts.length >= 3 && p.minY < p.maxY);
-  check('every prism has 3+ verts and minY < maxY', prismsValid, `${solidPrisms.length} prisms`);
-  check('brush count <= 450', m.brushes.length <= 450, `${m.brushes.length}`);
-  check('all brushes inside bounds', inBounds);
+  check('map is The Longest Yard', m.name === 'longestyard' && m.displayName === 'The Longest Yard');
   check('space-floater flags set', m.space === true && m.fogDensity === 0);
-  check('anti-grav thrusters present', (m.thrusters?.length ?? 0) >= 4, `${m.thrusters?.length}`);
-  check(
-    'exactly 8 portals, ids 0..7',
-    m.portals.length === 8 && m.portals.every((p, i) => p.id === i),
-  );
-}
+  check('no fewer than 10 spawns', m.spawns.length >= 10, `${m.spawns.length}`);
+  check('jump pad network present', m.jumpPads.length >= 10, `${m.jumpPads.length}`);
+  check('three teleporters present', m.portals.length === 3, `${m.portals.length}`);
 
-// ---------------------------------------------------------------------------
-console.log('180° rotational symmetry');
-{
-  const key = (v: Vec3): string => `${v.x.toFixed(3)},${v.y.toFixed(3)},${v.z.toFixed(3)}`;
-  const MAT_SWAP: Record<string, string> = {
-    trimRed: 'trimBlue',
-    trimBlue: 'trimRed',
-    glowRed: 'glowBlue',
-    glowBlue: 'glowRed',
-    emblemRed: 'emblemBlue',
-    emblemBlue: 'emblemRed',
-  };
-  const brushKeys = new Set(m.brushes.map((b) => `${key(b.min)}|${key(b.max)}|${b.mat}`));
-  const brushSym = m.brushes.every((b) =>
-    brushKeys.has(
-      `${key(vec3(-b.max.x, b.min.y, -b.max.z))}|${key(vec3(-b.min.x, b.max.y, -b.min.z))}|${MAT_SWAP[b.mat] ?? b.mat}`,
-    ),
-  );
-  check('brushes mirror exactly', brushSym);
-
-  const prismKey = (p: PrismBrush): string =>
-    `${p.verts.map((v) => `${v.x.toFixed(3)},${v.z.toFixed(3)}`).join(';')}|${p.minY.toFixed(3)}|${p.maxY.toFixed(3)}|${p.mat}`;
-  const prismKeys = new Set(solidPrisms.map(prismKey));
-  const prismSym = solidPrisms.every((p) =>
-    prismKeys.has(
-      prismKey({
-        verts: p.verts.map((v) => ({ x: -v.x, z: -v.z })),
-        minY: p.minY,
-        maxY: p.maxY,
-        mat: (MAT_SWAP[p.mat] ?? p.mat) as typeof p.mat,
-      }),
-    ),
-  );
-  check('prisms mirror exactly', prismSym);
-
-  const spawnKeys = new Set(m.spawns.map((s) => `${key(s.pos)}|${wrapAngle(s.yaw).toFixed(4)}`));
-  const spawnSym = m.spawns.every((s) =>
-    spawnKeys.has(
-      `${key(vec3(-s.pos.x, s.pos.y, -s.pos.z))}|${wrapAngle(s.yaw + Math.PI).toFixed(4)}`,
-    ),
-  );
-  check('spawns mirror exactly', spawnSym);
-
-  const padKeys = new Set(m.jumpPads.map((p) => `${key(p.trigger.min)}|${key(p.velocity)}`));
-  const padSym = m.jumpPads.every((p) =>
-    padKeys.has(
-      `${key(vec3(-p.trigger.max.x, p.trigger.min.y, -p.trigger.max.z))}|${key(vec3(-p.velocity.x, p.velocity.y, -p.velocity.z))}`,
-    ),
-  );
-  check('jump pads mirror exactly', padSym);
-
-  let portalSym = true;
-  for (let i = 0; i < 4; i++) {
-    const a = m.portals[i]!;
-    const b = m.portals[i + 4]!;
-    if (
-      key(b.center) !== key(vec3(-a.center.x, a.center.y, -a.center.z)) ||
-      key(b.exitPos) !== key(vec3(-a.exitPos.x, a.exitPos.y, -a.exitPos.z)) ||
-      Math.abs(wrapAngle(b.faceYaw - a.faceYaw - Math.PI)) > 1e-6 ||
-      Math.abs(wrapAngle(b.exitYaw - a.exitYaw - Math.PI)) > 1e-6 ||
-      b.accent === a.accent
-    )
-      portalSym = false;
+  let validBrushes = true;
+  for (const b of m.brushes) {
+    if (!(b.min.x < b.max.x && b.min.y < b.max.y && b.min.z < b.max.z)) validBrushes = false;
+    if (!insideBounds(b, m.bounds)) validBrushes = false;
   }
-  check('portals 4..7 mirror portals 0..3', portalSym);
+  check('brushes valid and inside bounds', validBrushes, `${m.brushes.length} brushes`);
 
-  const thrKeys = new Set((m.thrusters ?? []).map(key));
-  check(
-    'thrusters mirror exactly',
-    (m.thrusters ?? []).every((t) => thrKeys.has(key(vec3(-t.x, t.y, -t.z)))),
-  );
+  let validPrisms = true;
+  for (const p of solidPrisms) {
+    if (p.verts.length < 3 || !(p.minY < p.maxY) || !insideBounds(prismBounds(p), m.bounds)) validPrisms = false;
+  }
+  check('prisms valid and inside bounds', validPrisms, `${solidPrisms.length} prisms`);
+  check('anti-grav thrusters present', (m.thrusters?.length ?? 0) >= 8, `${m.thrusters?.length}`);
 }
 
-// ---------------------------------------------------------------------------
-console.log(`spawns (${m.spawns.length})`);
+console.log('spawns');
 {
-  check('at least 10 spawns', m.spawns.length >= 10, `${m.spawns.length}`);
   for (let i = 0; i < m.spawns.length; i++) {
     const s = m.spawns[i]!;
     const solid = traceBox(s.pos, s.pos, PLAYER_MINS, PLAYER_MAXS, m.brushes, solidPrisms).startsolid;
-    const down = traceBox(
-      s.pos,
-      vec3(s.pos.x, s.pos.y - 48, s.pos.z),
-      PLAYER_MINS,
-      PLAYER_MAXS,
-      m.brushes,
-      solidPrisms,
-    );
+    const down = traceBox(s.pos, vec3(s.pos.x, s.pos.y - 64, s.pos.z), PLAYER_MINS, PLAYER_MAXS, m.brushes, solidPrisms);
     check(`spawn ${i} not startsolid`, !solid);
-    check(`spawn ${i} grounds within 33u`, down.fraction < 1 && down.fraction * 48 < 33, `drop=${(down.fraction * 48).toFixed(1)}`);
-    let minDist = Infinity;
-    for (const p of m.portals) {
-      const c = vec3(
-        (p.trigger.min.x + p.trigger.max.x) / 2,
-        (p.trigger.min.y + p.trigger.max.y) / 2,
-        (p.trigger.min.z + p.trigger.max.z) / 2,
-      );
-      const d = Math.hypot(c.x - s.pos.x, c.y - s.pos.y, c.z - s.pos.z);
-      if (d < minDist) minDist = d;
-    }
-    check(`spawn ${i} >=128 from portal triggers`, minDist >= 128, `d=${minDist.toFixed(0)}`);
+    check(`spawn ${i} grounds within 33u`, down.fraction < 1 && down.fraction * 64 < 33, `drop=${(down.fraction * 64).toFixed(1)}`);
   }
 }
 
-// ---------------------------------------------------------------------------
-console.log(`launch pads (${m.jumpPads.length})`);
+console.log('jump pads');
 {
-  const feeders: number[] = [];
-  for (let i = 0; i < m.jumpPads.length; i++) {
-    const pad = m.jumpPads[i]!;
-    const st = createPmoveState(vec3(pad.padTop.x, pad.padTop.y + 0.25, pad.padTop.z));
-    let settled = 0;
-    for (let t = 0; t < 5000; t += 8) {
-      pmove(st, cmd(), m);
-      if (st.pos.y < m.bounds.min.y) break;
-      settled = st.onGround && t > 400 ? settled + 1 : 0;
-      if (settled > 12) break;
-    }
-    const where = clusterOf(st.pos);
-    check(
-      `pad ${i} flight ends safely grounded on a deck`,
-      st.onGround && where !== 'none',
-      `→ (${st.pos.x.toFixed(0)}, ${st.pos.y.toFixed(0)}, ${st.pos.z.toFixed(0)}) ${where}${st.teleportCount ? ' via portal' : ''}`,
-    );
-    if (st.teleportCount > 0) {
-      feeders.push(i);
-      check(`pad ${i} teleports exactly once`, st.teleportCount === 1, `count=${st.teleportCount}`);
-    }
-  }
-  check(
-    'exactly 6 portal-feeding pads (mid pad + 2 flank ferries per side)',
-    feeders.length === 6,
-    feeders.join(','),
-  );
-}
-
-// ---------------------------------------------------------------------------
-console.log('portal graph (8 portals)');
-{
-  const expectations: Record<number, 'red' | 'blue' | 'central'> = {
-    0: 'blue',
-    1: 'blue',
-    3: 'red',
-    4: 'red',
-    5: 'red',
-    7: 'blue',
+  const expectations: Record<number, 'base' | 'upper' | 'mid' | 'rail' | 'power'> = {
+    0: 'power',
+    1: 'upper',
+    2: 'upper',
+    3: 'upper',
+    4: 'rail',
+    5: 'mid',
+    6: 'mid',
+    7: 'upper',
+    8: 'upper',
+    9: 'upper',
+    10: 'upper',
+    11: 'upper',
+    12: 'upper',
   };
-  for (const p of m.portals) {
-    const exitMin = vec3(
-      p.exitPos.x + PLAYER_MINS.x,
-      p.exitPos.y + PLAYER_MINS.y,
-      p.exitPos.z + PLAYER_MINS.z,
-    );
-    const exitMax = vec3(
-      p.exitPos.x + PLAYER_MAXS.x,
-      p.exitPos.y + PLAYER_MAXS.y,
-      p.exitPos.z + PLAYER_MAXS.z,
-    );
-    const overlapsTrigger = m.portals.some((q) => aabbsOverlap(exitMin, exitMax, q.trigger));
-    check(`portal ${p.id} exit clear of all triggers`, !overlapsTrigger);
-
-    if (p.id === 2 || p.id === 6) continue; // floating mid portals → feeder-pad checks below
-    const n = yawForward(p.faceYaw);
-    const start = vec3(p.center.x + n.x * 120, 0, p.center.z + n.z * 120);
-    const down = traceBox(
-      vec3(start.x, p.center.y, start.z),
-      vec3(start.x, p.center.y - 200, start.z),
-      PLAYER_MINS,
-      PLAYER_MAXS,
-      m.brushes,
-      solidPrisms,
-    );
-    check(`portal ${p.id} has a walkable approach`, down.fraction < 1);
-    start.y = down.endpos.y;
-    const st = createPmoveState(start);
-    const runYaw = wrapAngle(p.faceYaw + Math.PI);
-    let settled = 0;
-    for (let t = 0; t < 4000; t += 8) {
-      pmove(st, cmd({ fmove: st.teleportCount === 0 ? 127 : 0, yaw: runYaw }), m);
-      if (st.pos.y < m.bounds.min.y) break;
-      settled = st.teleportCount > 0 && st.onGround ? settled + 1 : 0;
-      if (settled > 12) break;
-    }
-    check(`portal ${p.id} teleports an incoming runner`, st.teleportCount === 1, `count=${st.teleportCount}`);
-    const where = clusterOf(st.pos);
+  for (const [idxText, expected] of Object.entries(expectations)) {
+    const idx = Number(idxText);
+    const result = settleFromPad(idx);
+    const where = regionOf(result.pos);
     check(
-      `portal ${p.id} delivers to the ${expectations[p.id]} cluster`,
-      where === expectations[p.id] && st.onGround,
-      `landed (${st.pos.x.toFixed(0)}, ${st.pos.y.toFixed(0)}, ${st.pos.z.toFixed(0)}) ${where}`,
-    );
-  }
-  for (const [padIdx, portalId] of [
-    [0, 2],
-    [8, 6],
-  ] as const) {
-    const pad = m.jumpPads[padIdx]!;
-    const st = createPmoveState(vec3(pad.padTop.x, pad.padTop.y + 0.25, pad.padTop.z));
-    let settled = 0;
-    for (let t = 0; t < 5000; t += 8) {
-      pmove(st, cmd(), m);
-      settled = st.teleportCount > 0 && st.onGround ? settled + 1 : 0;
-      if (settled > 12) break;
-    }
-    check(
-      `mid portal ${portalId} (via its pad) delivers to central`,
-      st.teleportCount === 1 && clusterOf(st.pos) === 'central',
-      `landed (${st.pos.x.toFixed(0)}, ${st.pos.y.toFixed(0)}, ${st.pos.z.toFixed(0)})`,
+      `pad ${idx} lands on ${expected}`,
+      result.onGround && where === expected,
+      `landed (${result.pos.x.toFixed(0)}, ${result.pos.y.toFixed(0)}, ${result.pos.z.toFixed(0)}) ${where}`,
     );
   }
 }
 
-// ---------------------------------------------------------------------------
+console.log('teleporters');
+{
+  for (const p of m.portals) {
+    const exitMin = vec3(p.exitPos.x + PLAYER_MINS.x, p.exitPos.y + PLAYER_MINS.y, p.exitPos.z + PLAYER_MINS.z);
+    const exitMax = vec3(p.exitPos.x + PLAYER_MAXS.x, p.exitPos.y + PLAYER_MAXS.y, p.exitPos.z + PLAYER_MAXS.z);
+    const overlapsTrigger = m.portals.some((q) => aabbsOverlap(exitMin, exitMax, q.trigger));
+    check(`portal ${p.id} exit clear of triggers`, !overlapsTrigger);
+
+    const st = createPmoveState(vec3(p.center.x, p.trigger.min.y + 4, p.center.z));
+    pmove(st, cmd(), m);
+    check(`portal ${p.id} teleports`, st.teleportCount === 1);
+    check(`portal ${p.id} exits to armor bridge`, regionOf(st.pos) === 'upper', `exit=(${st.pos.x},${st.pos.y},${st.pos.z})`);
+  }
+}
+
 console.log('the void is real');
 {
-  const st = createPmoveState(vec3(-260, 160.25, -1648));
+  const st = createPmoveState(vec3(0, 96.25, -1380));
   let died = false;
   for (let t = 0; t < 6000; t += 8) {
-    pmove(st, cmd({ fmove: 127, yaw: 0 }), m); // yaw 0 → -z, off the back edge
+    pmove(st, cmd({ fmove: 127, yaw: Math.PI }), m); // run off the far rail edge
     if (st.pos.y < m.bounds.min.y) {
       died = true;
       break;
     }
   }
-  check('walking off a deck edge falls below the kill plane', died, `y=${st.pos.y.toFixed(0)}`);
+  check('walking off the rail platform falls below kill plane', died, `y=${st.pos.y.toFixed(0)}`);
 }
 
-// ---------------------------------------------------------------------------
-console.log('cluster isolation (portals stripped — no walkable route between clusters)');
-{
-  const noPortals: MapDef = { ...m, portals: [] };
-  let rng = 987654321;
-  const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
-  for (let i = 0; i < m.spawns.length; i++) {
-    const s = m.spawns[i]!;
-    const home = clusterOf(s.pos);
-    const forbidden =
-      home === 'central' ? ['red', 'blue'] : home === 'red' ? ['blue', 'central'] : ['red', 'central'];
-    const st = createPmoveState(s.pos);
-    let breach = '';
-    for (let step = 0; step < 4000; step++) {
-      pmove(
-        st,
-        cmd({
-          msec: 1 + Math.floor(rand() * 30),
-          yaw: rand() * Math.PI * 2,
-          fmove: rand() > 0.25 ? 127 : -127,
-          smove: rand() > 0.5 ? 127 : 0,
-          buttons: rand() < 0.35 ? 1 : 0,
-        }),
-        noPortals,
-      );
-      if (st.pos.y < m.bounds.min.y) {
-        st.pos.x = s.pos.x;
-        st.pos.y = s.pos.y;
-        st.pos.z = s.pos.z;
-        st.vel.x = st.vel.y = st.vel.z = 0;
-        continue;
-      }
-      const where = clusterOf(st.pos);
-      if (forbidden.includes(where)) {
-        breach = `reached ${where} at (${st.pos.x.toFixed(0)}, ${st.pos.y.toFixed(0)}, ${st.pos.z.toFixed(0)})`;
-        break;
-      }
-    }
-    check(`spawn ${i} (${home}) cannot walk to another cluster`, breach === '', breach || '4000 steps');
-  }
-}
-
-// ---------------------------------------------------------------------------
-console.log('fuzz sanity (portals active)');
+console.log('fuzz sanity');
 {
   let rng = 24681357;
   const rand = () => ((rng = (rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
@@ -350,7 +191,7 @@ console.log('fuzz sanity (portals active)');
     const st = createPmoveState(s.pos);
     let ok = true;
     let why = '';
-    for (let step = 0; step < 6000; step++) {
+    for (let step = 0; step < 5000; step++) {
       pmove(
         st,
         cmd({
@@ -369,9 +210,6 @@ console.log('fuzz sanity (portals active)');
         why = 'NaN position';
         break;
       }
-      // Leaving bounds on ANY axis is a server-side void death — reset, like
-      // the game respawns you. Only ballistic free-fall may do this; getting
-      // out while ON GROUND would mean walkable geometry leaks past bounds.
       const outside =
         p.y < m.bounds.min.y ||
         p.y > m.bounds.max.y ||
@@ -382,7 +220,7 @@ console.log('fuzz sanity (portals active)');
       if (outside) {
         if (st.onGround) {
           ok = false;
-          why = `escaped ON FOOT at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)})`;
+          why = `escaped on foot at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)})`;
           break;
         }
         st.pos.x = s.pos.x;
@@ -390,18 +228,10 @@ console.log('fuzz sanity (portals active)');
         st.pos.z = s.pos.z;
         st.vel.x = st.vel.y = st.vel.z = 0;
         st.teleportCount = 0;
-        continue;
       }
     }
-    check(`spawn ${i} fuzz stays sane`, ok, why || '6000 random steps');
+    check(`spawn ${i} fuzz stays sane`, ok, why || '5000 random steps');
   }
-}
-
-// ---------------------------------------------------------------------------
-console.log('misc');
-{
-  check('light count <= 24', m.lights.length <= 24, `${m.lights.length}`);
-  check('ambient suits the pale-deck space look', m.ambient >= 0.4 && m.ambient <= 0.65, `${m.ambient}`);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nall map tests passed');

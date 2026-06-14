@@ -4,7 +4,7 @@ A multiplayer arena FPS that runs as a **Discord Activity** — Quake Live Insta
 
 - **Real Quake movement** — faithful VQ3 physics: strafe jumping, bunny hopping, circle jumps. 320 ups on the ground, no ceiling in the air if your aim is smooth.
 - **Instagib rail** — hitscan laser, infinite range, one shot one kill, 1.5 s cooldown. No items, no health, no excuses.
-- **Vortex Portal** — a recreation of the Quake Live map (Team Arena's mpteam6): three platform clusters floating in open space — two mirrored bases and a neutral central platform riding anti-grav thrusters — connected only by giant swirling vortex portals. Flank portals jump you straight to the enemy base, launch pads throw you through a floating mid portal to the central platform, exits drop you in from above, and every deck edge falls away into the void.
+- **The Longest Yard** - a Quake III Arena q3dm17-inspired space arena: twin upper floors, a broad lower base floor with five launch routes, side rooms, mid platforms, a high power-up perch, an armor bridge, and a long isolated rail platform across the void.
 - **Discord-native identity & matchmaking** — your Discord username and avatar are your in-game identity (verified server-side, unspoofable). Everyone in the same voice-channel activity instance lands in the same FFA match. No lobby, no name entry.
 
 ## Quick start (plain browser, no Discord)

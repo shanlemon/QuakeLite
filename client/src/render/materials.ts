@@ -1,5 +1,5 @@
 // Procedural canvas-texture materials for every MaterialName in MapDef,
-// re-skinned to the Quake Live "Vortex Portal" space-floater palette:
+// skinned to a Quake-style space-floater palette:
 // pale warm-gray panel decks with dark grooves, white-blue marbled fascia,
 // bright cyan neon trim bands, dark hull metal, and painted team emblems.
 // No asset files: everything is drawn into <canvas> at startup. Textures are
@@ -223,9 +223,9 @@ function titleMarkTex(): THREE.CanvasTexture {
   ctx.textBaseline = 'middle';
   ctx.font = '800 58px Rajdhani, Segoe UI, Arial, sans-serif';
   ctx.fillStyle = 'rgba(68,44,16,0.55)';
-  ctx.fillText('VORTEX PORTAL', 3, 3);
+  ctx.fillText('LONGEST YARD', 3, 3);
   ctx.fillStyle = '#f1a83a';
-  ctx.fillText('VORTEX PORTAL', 0, 0);
+  ctx.fillText('LONGEST YARD', 0, 0);
   ctx.restore();
   const t = finishTexture(canvas);
   t.generateMipmaps = false;

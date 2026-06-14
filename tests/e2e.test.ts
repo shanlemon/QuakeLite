@@ -349,42 +349,20 @@ async function walkTo(
 }
 
 /**
- * The map is three floating clusters (red base z<0, blue base z>0, central
- * platform up high at the origin) connected only by vortex portals. Identify
- * which deck a position is on, and route any player to the RED MIDDLE deck —
- * the big flat drop-in zone where the rail test stages its shot.
- *
- * Routes (all single straight servo walks, validated against the map data):
- *  red flag deck    → walk south off the edge, drop onto the middle deck
- *  red rail/scout   → walk onto the wing's launch pad → flies to the flag deck
- *  red flank station→ walk into its portal → blue middle deck (then ferry back)
- *  central platform → walk north into the station portal → drop on red flag
- *  blue flag deck   → walk north off the edge, drop onto blue middle deck
- *  blue middle deck → walk onto a flank ferry pad → pad + portal chain lands
- *                     directly on the RED middle deck
- *  (blue rail/scout/station mirror the red ones)
+ * Identify the major Longest Yard deck a player is on. The e2e test can then
+ * route any randomized spawn back to the lower base floor before staging a
+ * deterministic rail shot.
  */
-type Region =
-  | 'redFlag' | 'redMiddle' | 'redRail' | 'redScout' | 'redStation'
-  | 'blueFlag' | 'blueMiddle' | 'blueRail' | 'blueScout' | 'blueStation'
-  | 'central' | 'air';
+type Region = 'base' | 'upper' | 'midFront' | 'midBack' | 'rail' | 'power' | 'air';
 
 function regionOf(p: { x: number; y: number; z: number }): Region {
   const ax = Math.abs(p.x);
-  if (p.y >= 290 && ax <= 350 && Math.abs(p.z) <= 450) return 'central';
-  if (p.z < 0) {
-    if (p.y >= 120 && p.y <= 300 && ax <= 440 && p.z >= -1900 && p.z <= -1405) return 'redFlag';
-    if (p.y >= -30 && p.y <= 70 && ax <= 310 && p.z >= -1440 && p.z <= -1080) return 'redMiddle';
-    if (p.y >= 50 && p.y <= 140 && p.x >= -800 && p.x <= -480 && p.z >= -1800 && p.z <= -1470) return 'redRail';
-    if (p.y >= -20 && p.y <= 70 && p.x >= 430 && p.x <= 690 && p.z >= -1700 && p.z <= -1436) return 'redScout';
-    if (p.y >= 40 && p.y <= 130 && ax >= 480 && ax <= 700 && p.z >= -1412 && p.z <= -1228) return 'redStation';
-  } else {
-    if (p.y >= 120 && p.y <= 300 && ax <= 440 && p.z <= 1900 && p.z >= 1405) return 'blueFlag';
-    if (p.y >= -30 && p.y <= 70 && ax <= 310 && p.z <= 1440 && p.z >= 1080) return 'blueMiddle';
-    if (p.y >= 50 && p.y <= 140 && p.x <= 800 && p.x >= 480 && p.z <= 1800 && p.z >= 1470) return 'blueRail';
-    if (p.y >= -20 && p.y <= 70 && p.x <= -430 && p.x >= -690 && p.z <= 1700 && p.z >= 1436) return 'blueScout';
-    if (p.y >= 40 && p.y <= 130 && ax >= 480 && ax <= 700 && p.z <= 1412 && p.z >= 1228) return 'blueStation';
-  }
+  if (p.y >= 500 && ax <= 280 && p.z >= 600 && p.z <= 980) return 'power';
+  if (p.y >= 30 && p.y <= 180 && ax <= 540 && p.z >= -1660 && p.z <= -1060) return 'rail';
+  if (p.y >= 120 && p.y <= 300 && ax <= 1320 && p.z >= -520 && p.z <= 540) return 'upper';
+  if (p.y >= 80 && p.y <= 190 && ax >= 680 && ax <= 1230 && p.z >= -1040 && p.z <= -500) return 'midFront';
+  if (p.y >= 80 && p.y <= 190 && ax >= 680 && ax <= 1230 && p.z >= 680 && p.z <= 1180) return 'midBack';
+  if (p.y >= -80 && p.y <= 100 && ax <= 1120 && p.z >= -560 && p.z <= 560) return 'base';
   return 'air';
 }
 
@@ -413,61 +391,38 @@ async function coast(
   }
 }
 
-async function stageToRedMiddle(c: Client): Promise<void> {
+async function stageToBaseFloor(c: Client): Promise<void> {
   for (let hop = 0; hop < 12; hop++) {
     const p = c.me()!.pos;
     const r = regionOf(p);
-    if (r === 'redMiddle') return;
-    console.log(`  ..    ${c.label} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}) [${r}] — routing toward red middle deck`);
+    if (r === 'base') return;
+    console.log(`  ..    ${c.label} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}) [${r}] - routing toward base floor`);
     switch (r) {
-      case 'redFlag':
-        await walkTo(c, 0, -1300); // off the south edge, lands on middle deck
+      case 'upper':
+        await walkTo(c, 0, 0, { stopWhen: (q) => regionOf(q) === 'base', timeoutMs: 15000 });
         break;
-      case 'redRail': // step on the pad, then hands off until the flag deck
-        await walkTo(c, -640, -1632, { stopWhen: (q) => q.y > 120, timeoutMs: 15000 });
-        await coast(c, 'pad flight to flag deck', (q) => regionOf(q) === 'redFlag');
+      case 'midFront':
+        await walkTo(c, p.x < 0 ? -920 : 920, -850, { stopWhen: (q) => q.y > 170, timeoutMs: 15000 });
+        await coast(c, 'front mid pad to upper', (q) => regionOf(q) === 'upper');
         break;
-      case 'redScout':
-        await walkTo(c, 560, -1570, { stopWhen: (q) => q.y > 50, timeoutMs: 15000 });
-        await coast(c, 'pad flight to flag deck', (q) => regionOf(q) === 'redFlag');
+      case 'midBack':
+        await walkTo(c, p.x < 0 ? -920 : 920, 850, { stopWhen: (q) => q.y > 170, timeoutMs: 15000 });
+        await coast(c, 'rear mid pad to upper', (q) => regionOf(q) === 'upper');
         break;
-      case 'redStation': // its portal drops on the BLUE middle deck
-        await walkTo(c, p.x > 0 ? 666 : -666, -1320, { stopWhen: (q) => q.z > 1000, timeoutMs: 15000 });
-        await coast(c, 'portal drop to blue middle', (q) => regionOf(q) === 'blueMiddle');
+      case 'rail':
+        await walkTo(c, p.x < 0 ? -170 : 170, -1460, { stopWhen: (q) => q.y > 150, timeoutMs: 15000 });
+        await coast(c, 'rail return pad to upper', (q) => regionOf(q) === 'upper');
         break;
-      case 'central': // north station portal drops on the red flag deck
-        await walkTo(c, 0, -340, { stopWhen: (q) => q.z < -1000, timeoutMs: 15000 });
-        await coast(c, 'portal drop to red flag deck', (q) => regionOf(q) === 'redFlag');
+      case 'power':
+        await walkTo(c, 208, 790, { stopWhen: (q) => regionOf(q) === 'upper', timeoutMs: 15000 });
         break;
-      case 'blueFlag':
-        await walkTo(c, 0, 1300); // off the north edge, lands on blue middle deck
-        break;
-      case 'blueMiddle':
-        // Flank ferry: touch the pad, then hands off — the launch + portal
-        // chain deposits the player on the RED middle deck (proven in
-        // tests/map.test.ts).
-        await walkTo(c, p.x >= 0 ? 252 : -252, 1300, { stopWhen: (q) => q.y > 30, timeoutMs: 15000 });
-        await coast(c, 'ferry to red middle deck', (q) => regionOf(q) === 'redMiddle', 12000);
-        break;
-      case 'blueRail':
-        await walkTo(c, 640, 1632, { stopWhen: (q) => q.y > 120, timeoutMs: 15000 });
-        await coast(c, 'pad flight to blue flag deck', (q) => regionOf(q) === 'blueFlag');
-        break;
-      case 'blueScout':
-        await walkTo(c, -560, 1570, { stopWhen: (q) => q.y > 50, timeoutMs: 15000 });
-        await coast(c, 'pad flight to blue flag deck', (q) => regionOf(q) === 'blueFlag');
-        break;
-      case 'blueStation':
-        await walkTo(c, p.x > 0 ? 666 : -666, 1320, { stopWhen: (q) => q.z < -1000, timeoutMs: 15000 });
-        await coast(c, 'portal drop to red middle', (q) => regionOf(q) === 'redMiddle');
-        break;
-      case 'air': // mid-flight / mid-drop — let it land, then reassess
+      case 'air':
         await coast(c, 'landing', (q) => regionOf(q) !== 'air', 6000);
         break;
     }
     await sleep(350); // settle + let the latest snapshot arrive
   }
-  throw new HardFail(`${c.label} could not reach the red middle deck`);
+  throw new HardFail(`${c.label} could not reach the base floor`);
 }
 
 const inBounds = (p: { x: number; y: number; z: number }): boolean =>
@@ -487,8 +442,8 @@ async function main(server: ChildProcess): Promise<void> {
   const B = await connectAndJoin('B', 'BobE2E');
   check('both clients got a welcome', A.welcome !== null && B.welcome !== null);
   must('welcome ids are distinct', A.id !== B.id, `A=${A.id} B=${B.id}`);
-  check('A welcome mapName is vortexportal', A.welcome!.mapName === 'vortexportal', A.welcome!.mapName);
-  check('B welcome mapName is vortexportal', B.welcome!.mapName === 'vortexportal', B.welcome!.mapName);
+  check('A welcome mapName is longestyard', A.welcome!.mapName === 'longestyard', A.welcome!.mapName);
+  check('B welcome mapName is longestyard', B.welcome!.mapName === 'longestyard', B.welcome!.mapName);
   const bSeesA = B.welcome!.players.find((p) => p.id === A.id);
   check("B's welcome lists client A", bSeesA !== undefined && bSeesA.name === 'AliceE2E',
     JSON.stringify(B.welcome!.players.map((p) => p.name)));
@@ -525,17 +480,14 @@ async function main(server: ChildProcess): Promise<void> {
   must('A has not sent any inputs yet (seq starts at 1)', A.seq === 1, `seq=${A.seq}`);
   const startPos = { ...A.me()!.pos };
   const ANCHORS: Partial<Record<Region, [number, number]>> = {
-    redFlag: [0, -1648],
-    redMiddle: [0, -1380],
-    redRail: [-640, -1700],
-    redScout: [560, -1620],
-    central: [0, -180],
-    blueFlag: [0, 1648],
-    blueMiddle: [0, 1380],
-    blueRail: [640, 1700],
-    blueScout: [-560, 1620],
+    base: [0, 0],
+    upper: [Math.sign(startPos.x || 1) * 900, 250],
+    midFront: [Math.sign(startPos.x || 1) * 920, -760],
+    midBack: [Math.sign(startPos.x || 1) * 920, 940],
+    rail: [0, -1380],
+    power: [0, 790],
   };
-  const anchor = ANCHORS[regionOf(startPos)] ?? [0, startPos.z > 0 ? 1648 : -1648];
+  const anchor = ANCHORS[regionOf(startPos)] ?? [startPos.x, startPos.z];
   let allInBounds = inBounds(startPos);
   const offSampler = A.onSnap((s) => {
     const me = s.players.find((p) => p.id === A.id);
@@ -564,14 +516,14 @@ async function main(server: ChildProcess): Promise<void> {
   );
   check('A stayed inside map bounds throughout', allInBounds);
 
-  // ----- staging: bring both players onto the red middle deck ----------------
-  // (Spawns can scatter A and B across the three floating clusters with no
-  // line of sight; the red middle deck is the big flat stage for the shot.)
+  // ----- staging: bring both players onto the lower base floor ---------------
+  // Spawns can scatter across the floating decks; the base floor gives a stable
+  // line of sight for the rail shot.
   console.log('staging both players for the rail shot');
-  await stageToRedMiddle(A);
-  await stageToRedMiddle(B);
-  await walkTo(A, -170, -1264);
-  await walkTo(B, 170, -1264);
+  await stageToBaseFloor(A);
+  await stageToBaseFloor(B);
+  await walkTo(A, -220, 0);
+  await walkTo(B, 220, 0);
 
   // ----- 5. the rail ---------------------------------------------------------
   console.log('rail kill (exact aim from the latest snapshot)');
@@ -640,7 +592,7 @@ async function main(server: ChildProcess): Promise<void> {
   await sleep(500);
   check('server process still alive after both clients left', !serverExited);
   const C = await connectAndJoin('C', 'CarolE2E');
-  check('a third client can connect and join', C.welcome !== null && C.welcome!.mapName === 'vortexportal');
+  check('a third client can connect and join', C.welcome !== null && C.welcome!.mapName === 'longestyard');
   C.ws.close();
   await sleep(200);
 }
