@@ -99,7 +99,7 @@ console.log('map sanity');
 {
   check('map is The Longest Yard', m.name === 'longestyard' && m.displayName === 'The Longest Yard');
   check('space-floater flags set', m.space === true && m.fogDensity === 0);
-  check('no fewer than 10 spawns', m.spawns.length >= 10, `${m.spawns.length}`);
+  check('no fewer than 40 spawns', m.spawns.length >= 40, `${m.spawns.length}`);
   check('jump pad network present', m.jumpPads.length >= 10, `${m.jumpPads.length}`);
   check('three teleporters present', m.portals.length === 3, `${m.portals.length}`);
 

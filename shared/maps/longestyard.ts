@@ -470,20 +470,38 @@ addBrush(box(-100, 790, 1660, 100, 830, 1688, 'portalFrame'));
 // ---------------------------------------------------------------------------
 
 const halfSpawns: SpawnDef[] = [
+  { pos: vec3(-360, 0.25, 250), yaw: -PI / 5 },
   { pos: vec3(-610, 0.25, -510), yaw: PI / 4 },
   { pos: vec3(-1030, 0.25, 430), yaw: -PI / 8 },
+  { pos: vec3(-1220, 0.25, -250), yaw: PI / 10 },
   { pos: vec3(-1280, 0.25, -120), yaw: 0 },
+  { pos: vec3(-1220, 0.25, 250), yaw: -PI / 8 },
+  { pos: vec3(-1560, 224.25, -520), yaw: PI / 5 },
   { pos: vec3(-1290, 224.25, -330), yaw: PI / 5 },
   { pos: vec3(-1260, 224.25, 520), yaw: PI / 2 },
+  { pos: vec3(-1500, 224.25, 700), yaw: -PI / 4 },
   { pos: vec3(-1270, 128.25, -1010), yaw: PI / 3 },
+  { pos: vec3(-1460, 128.25, -1280), yaw: PI / 6 },
+  { pos: vec3(-1040, 128.25, -860), yaw: (PI * 2) / 3 },
   { pos: vec3(-1270, 128.25, 1110), yaw: -PI / 3 },
+  { pos: vec3(-1460, 128.25, 1380), yaw: -PI / 6 },
+  { pos: vec3(-1160, 128.25, 900), yaw: (-PI * 2) / 3 },
 ];
 const spawns: SpawnDef[] = [
   ...halfSpawns,
   ...halfSpawns.map(mirrorXSpawn),
+  { pos: vec3(-220, 56.25, -1780), yaw: 0 },
   { pos: vec3(0, 56.25, -1690), yaw: 0 },
+  { pos: vec3(220, 56.25, -1780), yaw: 0 },
+  { pos: vec3(-420, 96.25, -2540), yaw: 0 },
   { pos: vec3(0, 96.25, -2390), yaw: 0 },
+  { pos: vec3(420, 96.25, -2540), yaw: 0 },
+  { pos: vec3(-220, 384.25, 755), yaw: PI / 2 },
+  { pos: vec3(220, 384.25, 755), yaw: -PI / 2 },
+  { pos: vec3(-540, 448.25, 940), yaw: PI / 4 },
+  { pos: vec3(-210, 648.25, 1325), yaw: PI },
   { pos: vec3(0, 648.25, 1435), yaw: PI },
+  { pos: vec3(210, 648.25, 1540), yaw: PI },
   { pos: vec3(0, 228.25, 451), yaw: PI },
 ];
 

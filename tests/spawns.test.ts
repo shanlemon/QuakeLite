@@ -39,6 +39,20 @@ console.log('spawn helpers');
 }
 
 {
+  const spawns = [spawn(-100), spawn(100), spawn(0, -100), spawn(0, 100)];
+  const self = player(0);
+  const enemy = player(0);
+  check('randomizes among equally safe spawn candidates', selectSpawn(spawns, self, [self, enemy], () => 0.74) === spawns[2]);
+}
+
+{
+  const spawns = [spawn(-100), spawn(100), spawn(200), spawn(1000)];
+  const self = player(0);
+  const enemy = player(0);
+  check('does not randomize into clearly unsafe spawn candidates', selectSpawn(spawns, self, [self, enemy], () => 0.99) === spawns[3]);
+}
+
+{
   const spawns = [spawn(-100), spawn(100)];
   const self = player(100);
   const deadEnemy = player(100, 0, false);

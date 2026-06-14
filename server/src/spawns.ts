@@ -13,7 +13,14 @@ function randomIndex(length: number, random: RandomFn): number {
   return Math.max(0, Math.min(length - 1, Math.floor(random() * length)));
 }
 
-/** Spawn point with the greatest distance to the nearest living enemy. */
+const SAFE_SPAWN_DIST_FRACTION = 0.8;
+const SAFE_SPAWN_CANDIDATE_CAP = 4;
+
+/**
+ * Pick a spawn far from living enemies, then randomize among the safest few.
+ * This keeps respawns hard to camp without putting players near an obvious
+ * enemy just because pure randomness said so.
+ */
 export function selectSpawn(
   spawns: readonly SpawnDef[],
   forPlayer: SpawnSelectionPlayer,
@@ -25,19 +32,23 @@ export function selectSpawn(
   const enemies = players.filter((q) => q !== forPlayer && q.alive);
   if (enemies.length === 0) return spawns[randomIndex(spawns.length, random)]!;
 
-  let best = spawns[0]!;
-  let bestDist = -1;
+  const scored: { spawn: SpawnDef; nearestEnemyDist: number }[] = [];
+  let bestDist = 0;
   for (const spawn of spawns) {
     let nearestEnemyDist = Infinity;
     for (const enemy of enemies) {
       nearestEnemyDist = Math.min(nearestEnemyDist, distanceSq(spawn.pos, enemy.state.pos));
     }
-    if (nearestEnemyDist > bestDist) {
-      bestDist = nearestEnemyDist;
-      best = spawn;
-    }
+    bestDist = Math.max(bestDist, nearestEnemyDist);
+    scored.push({ spawn, nearestEnemyDist });
   }
-  return best;
+  scored.sort((a, b) => b.nearestEnemyDist - a.nearestEnemyDist);
+
+  const minSafeDist = bestDist * SAFE_SPAWN_DIST_FRACTION;
+  const candidates = scored
+    .filter((s) => s.nearestEnemyDist >= minSafeDist)
+    .slice(0, SAFE_SPAWN_CANDIDATE_CAP);
+  return candidates[randomIndex(candidates.length, random)]!.spawn;
 }
 
 export function shuffledIndices(length: number, random: RandomFn): number[] {
