@@ -438,6 +438,17 @@ async function stageToBaseFloor(c: Client): Promise<void> {
   throw new HardFail(`${c.label} could not reach the base floor`);
 }
 
+async function stageForRailShot(c: Client, targetX: number): Promise<void> {
+  await stageToBaseFloor(c);
+  const p = c.me()!.pos;
+  const sideLaneX = p.x < 0 ? -960 : 960;
+  // Stay in the front lane while crossing the base. Direct diagonals can clip
+  // the five central jump pads and launch the test player back upstairs.
+  await walkTo(c, sideLaneX, -620);
+  await walkTo(c, targetX, -620);
+  await walkTo(c, targetX, -180);
+}
+
 const inBounds = (p: { x: number; y: number; z: number }): boolean =>
   p.x >= MAP.bounds.min.x && p.x <= MAP.bounds.max.x &&
   p.y >= MAP.bounds.min.y && p.y <= MAP.bounds.max.y &&
@@ -462,6 +473,28 @@ async function main(server: ChildProcess): Promise<void> {
     JSON.stringify(B.welcome!.players.map((p) => p.name)));
   const join = await waitForMsg(A, 'playerJoin for B', (m) => m.type === 'playerJoin' && m.player.id === B.id);
   check('playerJoin carries B\'s name', join.m.type === 'playerJoin' && join.m.player.name === 'BobE2E');
+  const renameFromA = A.msgs.length;
+  const renameFromB = B.msgs.length;
+  B.ws.send(JSON.stringify({ type: 'rename', name: 'Bob Target' }));
+  const renameA = await waitForMsg(A, 'playerUpdate for renamed B', (m) => m.type === 'playerUpdate' && m.player.id === B.id, {
+    from: renameFromA,
+  });
+  const renameB = await waitForMsg(B, 'self playerUpdate after rename', (m) => m.type === 'playerUpdate' && m.player.id === B.id, {
+    from: renameFromB,
+  });
+  check('rename broadcasts sanitized player name', renameA.m.type === 'playerUpdate' && renameA.m.player.name === 'Bob Target');
+  check('renamed player receives own updated name', renameB.m.type === 'playerUpdate' && renameB.m.player.name === 'Bob Target');
+  const clearFromA = A.msgs.length;
+  const clearFromB = B.msgs.length;
+  B.ws.send(JSON.stringify({ type: 'rename', name: '   \t\n   ' }));
+  const clearA = await waitForMsg(A, 'playerUpdate for cleared B name', (m) => m.type === 'playerUpdate' && m.player.id === B.id, {
+    from: clearFromA,
+  });
+  const clearB = await waitForMsg(B, 'self playerUpdate after clearing name', (m) => m.type === 'playerUpdate' && m.player.id === B.id, {
+    from: clearFromB,
+  });
+  check('blank rename restores default join name', clearA.m.type === 'playerUpdate' && clearA.m.player.name === 'BobE2E');
+  check('cleared-name player receives own default name', clearB.m.type === 'playerUpdate' && clearB.m.player.name === 'BobE2E');
 
   // ----- 3. snapshots flow at ~20 Hz with both players ----------------------
   console.log('snapshot flow');
@@ -534,12 +567,8 @@ async function main(server: ChildProcess): Promise<void> {
   // Spawns can scatter across the floating decks; the base floor gives a stable
   // line of sight for the rail shot.
   console.log('staging both players for the rail shot');
-  await stageToBaseFloor(A);
-  await stageToBaseFloor(B);
-  await walkTo(A, -560, -560);
-  await walkTo(A, -560, -180);
-  await walkTo(B, 560, -560);
-  await walkTo(B, 560, -180);
+  await stageForRailShot(A, -560);
+  await stageForRailShot(B, 560);
 
   // ----- 5. the rail ---------------------------------------------------------
   console.log('rail kill (exact aim from the latest snapshot)');

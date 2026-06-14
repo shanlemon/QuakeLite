@@ -25,6 +25,7 @@ export interface NetCallbacks {
 
 export interface NetClient {
   sendInput(cmd: UserCmd): void;
+  sendName(name: string): void;
   /** Estimated current server clock in ms (smoothed). */
   estServerTime(): number;
   /** Latest measured round-trip time in ms. */
@@ -36,7 +37,7 @@ const PING_INTERVAL_MS = 2000;
 const OFFSET_EMA = 0.2;
 
 /** Resolves once the socket is open and the join message has been sent. */
-export function connectNet(ctx: DiscordContext, cb: NetCallbacks): Promise<NetClient> {
+export function connectNet(ctx: DiscordContext, cb: NetCallbacks, displayName = ''): Promise<NetClient> {
   return new Promise<NetClient>((resolve, reject) => {
     // Inside Discord all traffic must traverse the activity proxy.
     const url = ctx.isDiscord
@@ -67,6 +68,9 @@ export function connectNet(ctx: DiscordContext, cb: NetCallbacks): Promise<NetCl
       sendInput(cmd: UserCmd): void {
         if (ws.readyState === WebSocket.OPEN) ws.send(encodeInput(cmd));
       },
+      sendName(name: string): void {
+        sendJson({ type: 'rename', name });
+      },
       estServerTime(): number {
         return performance.now() + offset;
       },
@@ -84,6 +88,7 @@ export function connectNet(ctx: DiscordContext, cb: NetCallbacks): Promise<NetCl
         type: 'join',
         instanceId: ctx.instanceId,
         user: ctx.user,
+        ...(displayName ? { displayName } : {}),
         accessToken: ctx.accessToken,
       });
       sendPing(); // sync the clock ASAP rather than waiting for the interval

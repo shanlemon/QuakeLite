@@ -10,6 +10,7 @@ import { WebSocket, type RawData } from 'ws';
 import { GAME } from '../../shared/constants';
 import { activeMap } from '../../shared/maps';
 import { createPmoveState, type UserCmd } from '../../shared/movement';
+import { sanitizePlayerName } from '../../shared/playerName';
 import {
   INPUT_BYTES,
   MSG_INPUT,
@@ -38,6 +39,7 @@ const MAX_FRAME_MS = 250;
 export interface Player extends GamePlayer {
   ws: WebSocket;
   userId: string;
+  defaultName: string;
   avatar: string | null;
   inputQueue: UserCmd[];
   /** Highest input seq processed (acked in snapshots). */
@@ -92,6 +94,7 @@ export class Room {
       ws,
       userId: identity.userId,
       name: identity.name,
+      defaultName: identity.name,
       avatar: identity.avatar,
       colorIdx,
       state: createPmoveState(),
@@ -153,6 +156,12 @@ export class Room {
         t: typeof msg.t === 'number' ? msg.t : 0,
         serverTime: performance.now(),
       });
+    } else if (msg.type === 'rename') {
+      const nextName = sanitizePlayerName(msg.name, player.defaultName);
+      if (nextName !== player.name) {
+        player.name = nextName;
+        this.broadcast({ type: 'playerUpdate', player: playerInfo(player) });
+      }
     }
     // Duplicate 'join' (or unknown types) after joining: ignored.
   }

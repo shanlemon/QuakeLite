@@ -162,9 +162,12 @@ export type ClientJsonMsg =
       instanceId: string;
       /** Discord user info from authenticate(); used directly only if no token. */
       user: { id: string; username: string; avatar: string | null };
+      /** Optional custom display name. Server verifies auth separately and sanitizes this. */
+      displayName?: string;
       /** OAuth access token — when present the server verifies identity with Discord. */
       accessToken?: string;
     }
+  | { type: 'rename'; name: string }
   | { type: 'ping'; t: number; rtt: number };
 
 /** Server → client JSON. */
@@ -178,6 +181,7 @@ export type ServerJsonMsg =
       players: PlayerInfo[];
     }
   | { type: 'playerJoin'; player: PlayerInfo }
+  | { type: 'playerUpdate'; player: PlayerInfo }
   | { type: 'playerLeave'; id: number }
   | {
       type: 'beam';

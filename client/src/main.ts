@@ -27,6 +27,9 @@ async function boot(): Promise<void> {
     // input/audio don't exist yet when the HUD is created — late-bind them.
     let input: InputSys | null = null;
     let audio: AudioSys | null = null;
+    let game: Game | null = null;
+    let net: NetClient | null = null;
+    let lastPlayerName = '';
 
     hud = createHud(hudRoot, {
       onResume: () => {
@@ -38,6 +41,10 @@ async function boot(): Promise<void> {
       onSettingsChange: (s: Settings) => {
         input?.setSensitivity(s.sensitivity);
         audio?.setMasterVolume(s.volume);
+        if (s.playerName !== lastPlayerName) {
+          net?.sendName(s.playerName);
+          lastPlayerName = s.playerName;
+        }
         // fov is read from hud.getSettings() every frame by the game.
       },
     });
@@ -55,12 +62,11 @@ async function boot(): Promise<void> {
       onInteract: () => audio!.resume(),
     });
     const initial = hud.getSettings();
+    lastPlayerName = initial.playerName;
     input.setSensitivity(initial.sensitivity);
     audio.setMasterVolume(initial.volume);
 
     hud.setConnectionMessage('Joining match…');
-    let game: Game | null = null;
-    let net: NetClient | null = null;
     // Server rejections (room full / auth failed) arrive BEFORE any welcome
     // and are followed by a close — show them instead of the generic
     // disconnect text.
@@ -103,7 +109,7 @@ async function boot(): Promise<void> {
           hud!.setConnectionMessage('Disconnected from server — reload to rejoin');
         }
       },
-    });
+    }, initial.playerName);
 
     const tick = (now: number): void => {
       requestAnimationFrame(tick);

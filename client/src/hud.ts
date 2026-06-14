@@ -15,7 +15,8 @@ import type {
   Settings,
 } from './types';
 import { GAME, playerColor } from '../../shared/constants';
-import { clampNumber, loadSettings, saveSettings } from './settings';
+import { MAX_PLAYER_NAME_LENGTH } from '../../shared/playerName';
+import { clampNumber, loadSettings, normalizeSettings, saveSettings } from './settings';
 import {
   cooldownFrac,
   formatClock,
@@ -161,6 +162,10 @@ const CSS = `
 .ql-set-row{display:grid;grid-template-columns:106px 1fr 58px;gap:10px;align-items:center;
   margin:10px 0;font-size:14px;letter-spacing:1px;color:#cfe3f0;text-align:left;}
 .ql-set-row input[type=range]{width:100%;accent-color:#46e6ff;cursor:pointer;background:transparent;}
+.ql-set-row input[type=text]{width:100%;min-width:0;padding:7px 8px;
+  color:#eaffff;background:rgba(2,6,14,0.72);border:1px solid rgba(150,175,205,0.42);
+  font:700 14px/1 ${FONT};letter-spacing:1px;outline:none;}
+.ql-set-row input[type=text]:focus{border-color:#46e6ff;box-shadow:0 0 10px rgba(70,230,255,0.22);}
 .ql-set-val{text-align:right;color:#46e6ff;font-weight:700;font-variant-numeric:tabular-nums;}
 .ql-legend{margin-top:18px;font-size:13px;color:#9fb6c8;letter-spacing:1px;line-height:1.7;}
 .ql-tip{margin-top:10px;font-size:12px;color:#6f8ba0;font-style:italic;line-height:1.5;}
@@ -325,6 +330,7 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
   resumeBtn.addEventListener('click', () => cb.onResume());
 
   function applySettings(): void {
+    settings = normalizeSettings(settings);
     saveSettings(settings);
     cb.onSettingsChange({ ...settings });
   }
@@ -357,6 +363,33 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
     });
   }
 
+  function nameRow(): void {
+    const row = el('div', 'ql-set-row', pausePanel);
+    const lab = el('span', undefined, row);
+    lab.textContent = 'NAME';
+    const input = el('input', undefined, row);
+    input.type = 'text';
+    input.maxLength = MAX_PLAYER_NAME_LENGTH;
+    input.placeholder = 'Player';
+    input.value = settings.playerName;
+    const valEl = el('span', 'ql-set-val', row);
+    valEl.textContent = `${input.value.length}/${MAX_PLAYER_NAME_LENGTH}`;
+    input.addEventListener('input', () => {
+      settings = { ...settings, playerName: input.value };
+      const normalized = saveAndGetSettings();
+      if (input.value !== normalized.playerName) input.value = normalized.playerName;
+      valEl.textContent = `${input.value.length}/${MAX_PLAYER_NAME_LENGTH}`;
+      cb.onSettingsChange({ ...normalized });
+    });
+  }
+
+  function saveAndGetSettings(): Settings {
+    settings = normalizeSettings(settings);
+    saveSettings(settings);
+    return settings;
+  }
+
+  nameRow();
   sliderRow('FOV', 90, 130, 1, settings.fov, (v) => String(Math.round(v)), (v) => {
     settings = { ...settings, fov: clampNumber(Math.round(v), 90, 130) };
     applySettings();

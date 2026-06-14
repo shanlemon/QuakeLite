@@ -10,8 +10,11 @@ function check(name: string, cond: boolean, detail = ''): void {
   }
 }
 
-function join(user: Extract<ClientJsonMsg, { type: 'join' }>['user']): Extract<ClientJsonMsg, { type: 'join' }> {
-  return { type: 'join', instanceId: 'identity-test', user };
+function join(
+  user: Extract<ClientJsonMsg, { type: 'join' }>['user'],
+  displayName?: string,
+): Extract<ClientJsonMsg, { type: 'join' }> {
+  return { type: 'join', instanceId: 'identity-test', user, ...(displayName !== undefined ? { displayName } : {}) };
 }
 
 console.log('join identity');
@@ -20,6 +23,11 @@ console.log('join identity');
   check('guest identity is generated server-side', typeof id?.userId === 'string' && /^guest:[a-f0-9-]{8}$/i.test(id.userId), id?.userId);
   check('guest name is sanitized', id?.name === 'Alice Player', id?.name);
   check('valid guest avatar hash is preserved', id?.avatar === 'AbC_1234', String(id?.avatar));
+}
+
+{
+  const id = await resolveJoinIdentity(join({ id: 'ignored', username: 'Generated1234', avatar: null }, '  Violet\t\nRail  '));
+  check('displayName overrides generated guest name', id?.name === 'Violet Rail', id?.name);
 }
 
 {

@@ -349,6 +349,10 @@ export function createGame(d: GameDeps): Game {
         hud.showMessage(`${msg.player.name} joined`, 2000);
         pushScoreboard();
         break;
+      case 'playerUpdate':
+        registry.set(msg.player.id, msg.player);
+        pushScoreboard();
+        break;
       case 'playerLeave': {
         const name = nameOf(msg.id);
         registry.delete(msg.id);

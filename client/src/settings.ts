@@ -1,4 +1,5 @@
 import type { Settings } from './types';
+import { sanitizeOptionalPlayerName } from '../../shared/playerName';
 
 export interface SettingsStorage {
   getItem(key: string): string | null;
@@ -6,7 +7,7 @@ export interface SettingsStorage {
 }
 
 export const SETTINGS_KEY = 'quakelite-settings';
-export const DEFAULT_SETTINGS: Settings = { fov: 105, sensitivity: 2, volume: 0.7 };
+export const DEFAULT_SETTINGS: Settings = { playerName: '', fov: 105, sensitivity: 2, volume: 0.7 };
 
 export function clampNumber(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
@@ -26,6 +27,7 @@ function storageOrNull(): SettingsStorage | null {
 
 export function normalizeSettings(raw: Partial<Settings> | null | undefined): Settings {
   return {
+    playerName: sanitizeOptionalPlayerName(raw?.playerName),
     fov: clampNumber(finiteSetting(raw?.fov, DEFAULT_SETTINGS.fov), 90, 130),
     sensitivity: clampNumber(finiteSetting(raw?.sensitivity, DEFAULT_SETTINGS.sensitivity), 0.5, 6),
     volume: clampNumber(finiteSetting(raw?.volume, DEFAULT_SETTINGS.volume), 0, 1),
