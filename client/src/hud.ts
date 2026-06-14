@@ -15,43 +15,22 @@ import type {
   Settings,
 } from './types';
 import { GAME, playerColor } from '../../shared/constants';
-
-const SETTINGS_KEY = 'quakelite-settings';
-const DEFAULT_SETTINGS: Settings = { fov: 105, sensitivity: 2, volume: 0.7 };
+import { clampNumber, loadSettings, saveSettings } from './settings';
+import {
+  cooldownFrac,
+  formatClock,
+  formatPing,
+  formatRespawnCountdown,
+  formatRestartCountdown,
+  leaderText,
+  podiumVisualOrder,
+  presentSpeed,
+  sortScoreRows,
+  sortStandings,
+} from './hudPresenter';
 
 function colorHex(idx: number): string {
   return '#' + playerColor(idx).toString(16).padStart(6, '0');
-}
-
-function clampNum(v: number, min: number, max: number): number {
-  return v < min ? min : v > max ? max : v;
-}
-
-function loadSettings(): Settings {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    const p = JSON.parse(raw) as Partial<Settings>;
-    return {
-      fov: clampNum(typeof p.fov === 'number' && isFinite(p.fov) ? p.fov : DEFAULT_SETTINGS.fov, 90, 130),
-      sensitivity: clampNum(
-        typeof p.sensitivity === 'number' && isFinite(p.sensitivity) ? p.sensitivity : DEFAULT_SETTINGS.sensitivity,
-        0.5,
-        6,
-      ),
-      volume: clampNum(typeof p.volume === 'number' && isFinite(p.volume) ? p.volume : DEFAULT_SETTINGS.volume, 0, 1),
-    };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
-function saveSettings(s: Settings): void {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
-  } catch {
-    // storage unavailable (sandboxed iframe) — settings just won't persist
-  }
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -217,6 +196,42 @@ const CSS = `
   color:#9fdcef;text-shadow:0 0 14px rgba(70,230,255,0.5);text-align:center;padding:0 24px;
   animation:ql-pulse 1.4s ease-in-out infinite;}
 @keyframes ql-pulse{0%,100%{opacity:0.4;}50%{opacity:1;}}
+@media (max-width:760px),(pointer:coarse){
+  .ql-clock{top:max(8px,env(safe-area-inset-top));font-size:18px;letter-spacing:2px;padding:2px 10px;}
+  .ql-frags{top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));padding:4px 9px;}
+  .ql-frags-big{font-size:20px;}
+  .ql-leader{font-size:11px;letter-spacing:1px;}
+  .ql-feed{top:calc(max(8px,env(safe-area-inset-top)) + 42px);left:max(8px,env(safe-area-inset-left));max-width:58vw;}
+  .ql-kill{font-size:12px;padding:3px 7px;}
+  .ql-cd{bottom:max(14px,env(safe-area-inset-bottom));width:150px;height:8px;}
+  .ql-speed{bottom:calc(max(24px,env(safe-area-inset-bottom)) + 126px);left:max(18px,env(safe-area-inset-left));}
+  .ql-speed-text{font-size:16px;}
+  .ql-speed-track{width:112px;height:5px;}
+  .ql-ping{display:none;}
+  .ql-msg{top:24%;font-size:22px;letter-spacing:3px;max-width:92vw;white-space:normal;text-align:center;}
+  .ql-respawn{bottom:22%;font-size:18px;letter-spacing:2px;}
+  .ql-score-panel{min-width:0;width:min(94vw,560px);max-height:78vh;padding:14px 12px;}
+  .ql-score-title{font-size:16px;letter-spacing:2px;}
+  .ql-table{font-size:13px;}
+  .ql-table th{font-size:10px;padding:4px 6px;}
+  .ql-table td{padding:4px 6px;}
+  .ql-table .ql-name{max-width:34vw;}
+  .ql-av,.ql-av-fb{width:24px;height:24px;}
+  .ql-pause-panel{width:min(92vw,430px);padding:20px 18px;}
+  .ql-title{font-size:34px;letter-spacing:5px;}
+  .ql-sub{font-size:13px;letter-spacing:2px;margin-bottom:14px;}
+  .ql-btn{font-size:18px;margin-bottom:14px;}
+  .ql-set-row{grid-template-columns:92px 1fr 48px;gap:8px;font-size:12px;}
+  .ql-legend{font-size:12px;line-height:1.45;}
+  .ql-tip{font-size:11px;}
+  .ql-end-panel{width:min(94vw,540px);padding:18px 14px;}
+  .ql-end-title{font-size:24px;letter-spacing:4px;}
+  .ql-podium{gap:8px;}
+  .ql-pod .pname{font-size:13px;}
+  .ql-pod .pfrags{font-size:20px;}
+  .ql-pod-1 .pname{font-size:15px;}
+  .ql-pod-1 .pfrags{font-size:26px;}
+}
 `;
 
 export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud => {
@@ -306,7 +321,7 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
   subEl.textContent = 'The Longest Yard - Instagib FFA';
   const resumeBtn = el('button', 'ql-btn', pausePanel);
   resumeBtn.type = 'button';
-  resumeBtn.textContent = 'CLICK TO RESUME';
+  resumeBtn.textContent = 'PLAY / RESUME';
   resumeBtn.addEventListener('click', () => cb.onResume());
 
   function applySettings(): void {
@@ -343,21 +358,21 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
   }
 
   sliderRow('FOV', 90, 130, 1, settings.fov, (v) => String(Math.round(v)), (v) => {
-    settings = { ...settings, fov: clampNum(Math.round(v), 90, 130) };
+    settings = { ...settings, fov: clampNumber(Math.round(v), 90, 130) };
     applySettings();
   });
   sliderRow('SENSITIVITY', 0.5, 6, 0.1, settings.sensitivity, (v) => v.toFixed(1), (v) => {
-    settings = { ...settings, sensitivity: clampNum(v, 0.5, 6) };
+    settings = { ...settings, sensitivity: clampNumber(v, 0.5, 6) };
     applySettings();
   });
   sliderRow('VOLUME', 0, 100, 1, Math.round(settings.volume * 100), (v) => `${Math.round(v)}%`, (v) => {
-    settings = { ...settings, volume: clampNum(v / 100, 0, 1) };
+    settings = { ...settings, volume: clampNumber(v / 100, 0, 1) };
     applySettings();
   });
 
   const legendEl = el('div', 'ql-legend', pausePanel);
   legendEl.textContent =
-    'WASD move · SPACE jump (hold to bunny hop) · MOUSE aim · CLICK fire · TAB scores · ESC pause';
+    'WASD / left stick move - SPACE / JUMP to bunny hop - MOUSE / drag aim - CLICK / FIRE shoot - TAB / SCORE standings';
   const tipEl = el('div', 'ql-tip', pausePanel);
   tipEl.textContent =
     'Tip: in the air, hold forward + one strafe key and smoothly turn the mouse the same way — you gain speed past 320 ups.';
@@ -393,9 +408,9 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
 
   // --- per-frame stat cache --------------------------------------------------
   const last = {
-    clockSec: -1,
+    clockText: '',
     frags: NaN,
-    topEnemy: NaN,
+    leaderText: null as string | null,
     cdFrac: -1,
     cdFull: false,
     speed: NaN,
@@ -411,11 +426,10 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
   return {
     setStats(s: HudStats): void {
       // clock
-      const sec = Math.max(0, Math.ceil(s.timeLeftMs / 1000));
-      if (sec !== last.clockSec) {
-        last.clockSec = sec;
-        const m = Math.floor(sec / 60);
-        clockEl.textContent = `${m}:${String(sec % 60).padStart(2, '0')}`;
+      const clockText = formatClock(s.timeLeftMs);
+      if (clockText !== last.clockText) {
+        last.clockText = clockText;
+        clockEl.textContent = clockText;
       }
       // frags
       if (s.frags !== last.frags) {
@@ -423,17 +437,18 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
         fragsNum.textContent = String(s.frags);
       }
       // leader
-      if (s.topEnemyFrags !== last.topEnemy) {
-        last.topEnemy = s.topEnemyFrags;
-        if (s.topEnemyFrags < 0) {
+      const lead = leaderText(s.topEnemyFrags);
+      if (lead !== last.leaderText) {
+        last.leaderText = lead;
+        if (lead === null) {
           leaderEl.classList.add('ql-hidden');
         } else {
-          leaderEl.textContent = `LEADER ${s.topEnemyFrags}`;
+          leaderEl.textContent = lead;
           leaderEl.classList.remove('ql-hidden');
         }
       }
       // cooldown
-      const frac = clampNum(s.cooldownFrac, 0, 1);
+      const frac = cooldownFrac(s.cooldownFrac);
       if (Math.abs(frac - last.cdFrac) > 0.0005) {
         last.cdFrac = frac;
         cdFill.style.transform = `scaleX(${frac.toFixed(4)})`;
@@ -452,26 +467,24 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
         }
       }
       // speed
-      const sp = Math.max(0, Math.round(s.speed));
-      if (sp !== last.speed) {
-        last.speed = sp;
-        speedText.textContent = `${sp} ups`;
-        const bar = Math.min(1, sp / 800);
-        if (Math.abs(bar - last.speedBar) > 0.001) {
-          last.speedBar = bar;
-          speedFill.style.transform = `scaleX(${bar.toFixed(4)})`;
+      const sp = presentSpeed(s.speed);
+      if (sp.value !== last.speed) {
+        last.speed = sp.value;
+        speedText.textContent = sp.text;
+        if (Math.abs(sp.barFrac - last.speedBar) > 0.001) {
+          last.speedBar = sp.barFrac;
+          speedFill.style.transform = `scaleX(${sp.barFrac.toFixed(4)})`;
         }
-        const fast = sp > 320;
-        if (fast !== last.speedFast) {
-          last.speedFast = fast;
-          speedEl.classList.toggle('fast', fast);
+        if (sp.fast !== last.speedFast) {
+          last.speedFast = sp.fast;
+          speedEl.classList.toggle('fast', sp.fast);
         }
       }
       // ping
       const pg = Math.max(0, Math.round(s.ping));
       if (pg !== last.ping) {
         last.ping = pg;
-        pingEl.textContent = `PING ${pg}`;
+        pingEl.textContent = formatPing(s.ping);
       }
       // death state
       if (s.alive !== last.alive) {
@@ -481,7 +494,7 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
         if (s.alive) last.respawnText = '';
       }
       if (!s.alive) {
-        const t = `RESPAWN IN ${(Math.max(0, s.respawnInMs) / 1000).toFixed(1)}s`;
+        const t = formatRespawnCountdown(s.respawnInMs);
         if (t !== last.respawnText) {
           last.respawnText = t;
           respawnEl.textContent = t;
@@ -522,7 +535,7 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
     },
 
     updateScoreboard(rows: ScoreRow[]): void {
-      const sorted = rows.slice().sort((a, b) => b.frags - a.frags || a.deaths - b.deaths);
+      const sorted = sortScoreRows(rows);
       const frag = document.createDocumentFragment();
       for (const r of sorted) {
         const tr = document.createElement('tr');
@@ -565,13 +578,13 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
     },
 
     showMatchEnd(standings, restartInMs): void {
-      const sorted = standings.slice().sort((a, b) => b.frags - a.frags || a.deaths - b.deaths);
+      const sorted = sortStandings(standings);
 
       podiumEl.replaceChildren();
       const top3 = sorted.slice(0, 3);
       const ranks = ['1ST', '2ND', '3RD'];
       // visual order: 2nd, 1st, 3rd (winner in the middle, raised)
-      const order = top3.length >= 2 ? [1, 0, 2] : [0];
+      const order = podiumVisualOrder(top3.length);
       for (const i of order) {
         const s = top3[i];
         if (!s) continue;
@@ -603,8 +616,7 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
 
       const endAt = performance.now() + Math.max(0, restartInMs);
       const update = (): void => {
-        const remS = Math.max(0, Math.ceil((endAt - performance.now()) / 1000));
-        const text = `NEXT MATCH IN ${remS}s`;
+        const text = formatRestartCountdown(endAt - performance.now());
         if (text !== lastEndCountText) {
           lastEndCountText = text;
           endCount.textContent = text;

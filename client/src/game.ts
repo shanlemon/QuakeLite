@@ -10,17 +10,11 @@ import {
   clone,
   copy,
   clamp,
-  lerp,
-  lerpVec,
-  lerpAngle,
   distanceSq,
-  viewDir,
 } from '../../shared/math';
-import { EYE_HEIGHT, GAME, PLAYER_MINS, PLAYER_MAXS } from '../../shared/constants';
-import { rayVsAABB, traceRay } from '../../shared/collision';
+import { EYE_HEIGHT, GAME } from '../../shared/constants';
 import {
   BUTTON_FIRE,
-  BUTTON_JUMP,
   createPmoveState,
   horizontalSpeed,
   pmove,
@@ -37,10 +31,27 @@ import {
   type Snapshot,
   type SnapshotPlayer,
 } from '../../shared/protocol';
-import type { AudioSys, Hud, Renderer, RenderPlayer, ScoreRow } from './types';
+import type { AudioSys, Hud, Renderer, RenderPlayer } from './types';
 import type { DiscordContext } from './discord';
 import type { InputSys } from './input';
 import type { NetClient } from './net';
+import {
+  appendInterpSample,
+  pruneInterpBuffer,
+  sampleFromSnapshotPlayer,
+  sampleInterpBuffer,
+  type InterpSample,
+} from './interpolation';
+import { computeFirePreview, firePreviewMap, type FirePreviewTarget } from './firePreview';
+import { buildFrameCommand } from './frameCommand';
+import {
+  applyScoreRows,
+  buildScoreRows,
+  matchEndRows,
+  playerColor,
+  playerName,
+  topEnemyFrags,
+} from './playerRegistry';
 
 export type WelcomeMsg = Extract<ServerJsonMsg, { type: 'welcome' }>;
 
@@ -70,17 +81,8 @@ interface PendingCmd {
   teleportCount: number;
 }
 
-interface InterpSample {
-  t: number;
-  pos: Vec3;
-  yaw: number;
-  pitch: number;
-  alive: boolean;
-  teleportCount: number;
-}
-
 /** Last rendered state of a remote player (also used for fire raycasts/gibs). */
-interface RemoteView {
+interface RemoteView extends FirePreviewTarget {
   pos: Vec3;
   yaw: number;
   pitch: number;
@@ -89,11 +91,7 @@ interface RemoteView {
 }
 
 const MIN_FRAME_MS = 4;
-const MAX_CMD_MSEC = 100;
 const PENDING_CAP = 512;
-const INTERP_BUFFER_MS = 1500;
-/** Snapshot gaps wider than this are not interpolated across (snap instead). */
-const INTERP_MAX_GAP_MS = 250;
 /** Squared predicted-vs-authoritative position error that triggers a rewind. */
 const RECONCILE_EPS_SQ = 1;
 const FOOTSTEP_INTERVAL_MS = 340;
@@ -129,33 +127,15 @@ export function createGame(d: GameDeps): Game {
   //  Scoreboard / registry helpers
   // ------------------------------------------------------------------ //
 
-  function avatarUrl(p: PlayerInfo): string | null {
-    return p.avatar
-      ? `https://cdn.discordapp.com/avatars/${p.userId}/${p.avatar}.png?size=64`
-      : null;
-  }
-
   function pushScoreboard(): void {
-    const rows: ScoreRow[] = [...registry.values()]
-      .sort((a, b) => b.frags - a.frags || a.deaths - b.deaths || a.name.localeCompare(b.name))
-      .map((p) => ({
-        id: p.id,
-        name: p.name,
-        avatarUrl: avatarUrl(p),
-        colorIdx: p.colorIdx,
-        frags: p.frags,
-        deaths: p.deaths,
-        ping: p.ping,
-        isLocal: p.id === selfId,
-      }));
-    hud.updateScoreboard(rows);
+    hud.updateScoreboard(buildScoreRows(registry.values(), selfId));
   }
 
   function nameOf(id: number): string {
-    return registry.get(id)?.name ?? 'Player';
+    return playerName(registry, id);
   }
   function colorOf(id: number): number {
-    return registry.get(id)?.colorIdx ?? 0;
+    return playerColor(registry, id);
   }
 
   // ------------------------------------------------------------------ //
@@ -189,31 +169,17 @@ export function createGame(d: GameDeps): Game {
     lastFireAt = performance.now();
     const yaw = input.getYaw();
     const pitch = input.getPitch();
-    const eye = vec3(local.pos.x, local.pos.y + EYE_HEIGHT, local.pos.z);
-    const dir = viewDir(yaw, pitch);
-
-    // Cosmetic beam endpoint: nearer of world geometry and any remote hull.
-    // The server is authoritative on the actual hit.
-    const world = traceRay(eye, dir, GAME.RAIL_RANGE, map.brushes, map.prisms);
-    let dist = world.fraction * GAME.RAIL_RANGE;
-    let hitWorld = world.fraction < 1;
-    for (const rv of remoteViews.values()) {
-      if (!rv.alive) continue;
-      const box = {
-        min: vec3(rv.pos.x + PLAYER_MINS.x, rv.pos.y + PLAYER_MINS.y, rv.pos.z + PLAYER_MINS.z),
-        max: vec3(rv.pos.x + PLAYER_MAXS.x, rv.pos.y + PLAYER_MAXS.y, rv.pos.z + PLAYER_MAXS.z),
-      };
-      const t = rayVsAABB(eye, dir, box, dist);
-      if (t !== null && t < dist) {
-        dist = t;
-        hitWorld = false;
-      }
-    }
-    const end = vec3(eye.x + dir.x * dist, eye.y + dir.y * dist, eye.z + dir.z * dist);
+    const preview = computeFirePreview({
+      shooterPos: local.pos,
+      yaw,
+      pitch,
+      map: firePreviewMap(map),
+      targets: remoteViews.values(),
+    });
 
     const colorIdx = colorOf(selfId);
-    renderer.spawnBeam(eye, end, colorIdx);
-    if (hitWorld) renderer.spawnImpact(end, colorIdx);
+    renderer.spawnBeam(preview.eye, preview.end, colorIdx);
+    if (preview.hitWorld) renderer.spawnImpact(preview.end, colorIdx);
     renderer.triggerRecoil();
     audio.play('fire');
   }
@@ -284,45 +250,15 @@ export function createGame(d: GameDeps): Game {
       buf = [];
       buffers.set(p.id, buf);
     }
-    if (buf.length > 0 && t <= buf[buf.length - 1]!.t) return; // out of order
-    buf.push({
-      t,
-      pos: p.pos,
-      yaw: p.yaw,
-      pitch: p.pitch,
-      alive: p.alive,
-      teleportCount: p.teleportCount,
-    });
-  }
-
-  function sampleBuffer(buf: InterpSample[], renderTime: number): InterpSample {
-    const newest = buf[buf.length - 1]!;
-    if (renderTime >= newest.t) return newest; // hold newest — no extrapolation
-    if (renderTime <= buf[0]!.t) return buf[0]!;
-    let i = buf.length - 2;
-    while (i > 0 && buf[i]!.t > renderTime) i--;
-    const a = buf[i]!;
-    const b = buf[i + 1]!;
-    // Never interpolate across a teleport or a long gap — snap to the newer.
-    if (a.teleportCount !== b.teleportCount || b.t - a.t > INTERP_MAX_GAP_MS) return b;
-    const t = (renderTime - a.t) / (b.t - a.t);
-    return {
-      t: renderTime,
-      pos: lerpVec(vec3(), a.pos, b.pos, t),
-      yaw: lerpAngle(a.yaw, b.yaw, t),
-      pitch: lerp(a.pitch, b.pitch, t),
-      alive: b.alive,
-      teleportCount: b.teleportCount,
-    };
+    appendInterpSample(buf, sampleFromSnapshotPlayer(p, t));
   }
 
   function updateRemoteViews(renderTime: number): void {
     for (const [id, buf] of buffers) {
       if (buf.length === 0) continue;
-      const newestT = buf[buf.length - 1]!.t;
-      while (buf.length > 2 && newestT - buf[0]!.t > INTERP_BUFFER_MS) buf.shift();
+      pruneInterpBuffer(buf);
 
-      const s = sampleBuffer(buf, renderTime);
+      const s = sampleInterpBuffer(buf, renderTime);
       const view = remoteViews.get(id);
       if (view) {
         if (s.teleportCount !== view.teleportCount) {
@@ -439,13 +375,7 @@ export function createGame(d: GameDeps): Game {
         handleRespawn(msg);
         break;
       case 'scores': {
-        for (const row of msg.rows) {
-          const p = registry.get(row.id);
-          if (!p) continue;
-          p.frags = row.frags;
-          p.deaths = row.deaths;
-          p.ping = row.ping;
-        }
+        applyScoreRows(registry, msg.rows);
         pushScoreboard();
         discord.updateActivity(registry.get(selfId)?.frags ?? 0);
         break;
@@ -460,12 +390,7 @@ export function createGame(d: GameDeps): Game {
       case 'matchEnd':
         match = { state: 'intermission', endsAt: msg.restartAt, fragLimit: match.fragLimit };
         hud.showMatchEnd(
-          msg.standings.map((s) => ({
-            name: s.name,
-            colorIdx: s.colorIdx,
-            frags: s.frags,
-            deaths: s.deaths,
-          })),
+          matchEndRows(msg.standings),
           Math.max(0, msg.restartAt - net.estServerTime()),
         );
         audio.play('matchEnd');
@@ -506,22 +431,14 @@ export function createGame(d: GameDeps): Game {
     const predicting = selfAlive && playing;
     const cooldownReady = now - lastFireAt >= GAME.FIRE_COOLDOWN_MS;
 
-    let buttons = 0;
-    if (predicting) {
-      buttons = s.buttons & BUTTON_JUMP;
-      if ((s.buttons & BUTTON_FIRE) !== 0 && cooldownReady) buttons |= BUTTON_FIRE;
-    }
-
-    const cmd: UserCmd = {
+    const cmd = buildFrameCommand({
       seq: ++seq,
-      msec: clamp(Math.round(dtMs), 1, MAX_CMD_MSEC),
-      yaw: s.yaw,
-      pitch: s.pitch,
-      fmove: predicting ? s.fmove : 0,
-      smove: predicting ? s.smove : 0,
-      buttons,
-      interpTime: Math.max(0, Math.floor(renderTime)),
-    };
+      dtMs,
+      sample: s,
+      predicting,
+      fireReady: cooldownReady,
+      renderTime,
+    });
 
     if (predicting) {
       const events = pmove(local, cmd, map);
@@ -546,13 +463,9 @@ export function createGame(d: GameDeps): Game {
 
     // ---- HUD ----
     const me = registry.get(selfId);
-    let topEnemyFrags = -1;
-    for (const p of registry.values()) {
-      if (p.id !== selfId && p.frags > topEnemyFrags) topEnemyFrags = p.frags;
-    }
     hud.setStats({
       frags: me?.frags ?? 0,
-      topEnemyFrags,
+      topEnemyFrags: topEnemyFrags(registry.values(), selfId),
       cooldownFrac: Math.min(1, (now - lastFireAt) / GAME.FIRE_COOLDOWN_MS),
       speed,
       ping: Math.round(net.getRtt()),

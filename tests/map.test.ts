@@ -8,7 +8,7 @@ import { traceBox } from '../shared/collision';
 import { PLAYER_MINS, PLAYER_MAXS } from '../shared/constants';
 import { createPmoveState, pmove, type UserCmd } from '../shared/movement';
 import { aabbsOverlap, type AABB, type MapDef, type PrismBrush } from '../shared/mapdef';
-import { vortexPortal as m } from '../shared/maps/vortexportal';
+import { longestYard as m } from '../shared/maps/longestyard';
 
 let failures = 0;
 function check(name: string, cond: boolean, detail = ''): void {
@@ -33,21 +33,26 @@ const cmd = (over: Partial<UserCmd> = {}): UserCmd => ({
 
 const solidPrisms = m.prisms ?? [];
 
-const BASE: AABB = { min: vec3(-1120, -80, -560), max: vec3(1120, 100, 560) };
-const UPPER: AABB = { min: vec3(-1320, 120, -520), max: vec3(1320, 300, 540) };
-const MID: AABB = { min: vec3(-1230, 80, -1040), max: vec3(1230, 190, 1180) };
-const RAIL: AABB = { min: vec3(-540, 30, -1660), max: vec3(540, 180, -1060) };
-const POWER: AABB = { min: vec3(-260, 500, 620), max: vec3(260, 660, 960) };
+const BASE: AABB = { min: vec3(-1500, -80, -1620), max: vec3(1500, 100, 880) };
+const UPPER: AABB = { min: vec3(-1840, 120, -720), max: vec3(1840, 310, 920) };
+const MID_FRONT: AABB = { min: vec3(-1660, 70, -1380), max: vec3(1660, 200, -650) };
+const MID_BACK: AABB = { min: vec3(-1660, 70, 760), max: vec3(1660, 200, 1440) };
+const RAIL: AABB = { min: vec3(-820, 30, -2760), max: vec3(820, 180, -1880) };
+const MEGA: AABB = { min: vec3(-360, 300, 540), max: vec3(360, 430, 980) };
+const POWER: AABB = { min: vec3(-430, 560, 1200), max: vec3(430, 720, 1700) };
 
 function inRegion(p: Vec3, r: AABB): boolean {
   return p.x > r.min.x && p.x < r.max.x && p.y > r.min.y && p.y < r.max.y && p.z > r.min.z && p.z < r.max.z;
 }
 
-function regionOf(p: Vec3): 'base' | 'upper' | 'mid' | 'rail' | 'power' | 'none' {
+function regionOf(p: Vec3): 'base' | 'upper' | 'midFront' | 'midBack' | 'rail' | 'mega' | 'power' | 'none' {
+  const ax = Math.abs(p.x);
   if (inRegion(p, POWER)) return 'power';
+  if (inRegion(p, MEGA)) return 'mega';
   if (inRegion(p, RAIL)) return 'rail';
   if (inRegion(p, UPPER)) return 'upper';
-  if (inRegion(p, MID)) return 'mid';
+  if (ax >= 860 && inRegion(p, MID_FRONT)) return 'midFront';
+  if (ax >= 860 && inRegion(p, MID_BACK)) return 'midBack';
   if (inRegion(p, BASE)) return 'base';
   return 'none';
 }
@@ -126,20 +131,31 @@ console.log('spawns');
 
 console.log('jump pads');
 {
-  const expectations: Record<number, 'base' | 'upper' | 'mid' | 'rail' | 'power'> = {
-    0: 'power',
+  const expectations: Record<
+    number,
+    'base' | 'upper' | 'midFront' | 'midBack' | 'rail' | 'mega' | 'power'
+  > = {
+    0: 'mega',
     1: 'upper',
     2: 'upper',
     3: 'upper',
     4: 'rail',
-    5: 'mid',
-    6: 'mid',
-    7: 'upper',
-    8: 'upper',
-    9: 'upper',
-    10: 'upper',
+    5: 'power',
+    6: 'power',
+    7: 'midFront',
+    8: 'midFront',
+    9: 'midBack',
+    10: 'midBack',
     11: 'upper',
     12: 'upper',
+    13: 'upper',
+    14: 'upper',
+    15: 'upper',
+    16: 'upper',
+    17: 'midFront',
+    18: 'midFront',
+    19: 'midBack',
+    20: 'midBack',
   };
   for (const [idxText, expected] of Object.entries(expectations)) {
     const idx = Number(idxText);
@@ -170,10 +186,10 @@ console.log('teleporters');
 
 console.log('the void is real');
 {
-  const st = createPmoveState(vec3(0, 96.25, -1380));
+  const st = createPmoveState(vec3(0, 96.25, -2500));
   let died = false;
   for (let t = 0; t < 6000; t += 8) {
-    pmove(st, cmd({ fmove: 127, yaw: Math.PI }), m); // run off the far rail edge
+    pmove(st, cmd({ fmove: 127, yaw: 0 }), m); // run off the far rail edge
     if (st.pos.y < m.bounds.min.y) {
       died = true;
       break;

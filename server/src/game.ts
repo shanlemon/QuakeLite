@@ -7,7 +7,7 @@
 
 import { rayVsAABB, traceRay } from '../../shared/collision';
 import { EYE_HEIGHT, GAME, PLAYER_MAXS, PLAYER_MINS } from '../../shared/constants';
-import { clamp, copy, distanceSq, ma, vec3, viewDir } from '../../shared/math';
+import { clamp, copy, ma, vec3, viewDir } from '../../shared/math';
 import { pointInAABB, type MapDef, type SpawnDef } from '../../shared/mapdef';
 import { createPmoveState, type PmoveState, type UserCmd } from '../../shared/movement';
 import {
@@ -18,6 +18,7 @@ import {
   type Standing,
 } from '../../shared/protocol';
 import type { LagCompHistory } from './lagcomp';
+import { selectSpawn, shuffledIndices, type RandomFn } from './spawns';
 
 /** Early-fire tolerance vs. the cooldown schedule (~±2 ticks + jitter). */
 const FIRE_COOLDOWN_SLACK_MS = 60;
@@ -52,6 +53,7 @@ export class Game {
     private readonly map: MapDef,
     private readonly broadcast: (msg: ServerJsonMsg) => void,
     now: number,
+    private readonly random: RandomFn = Math.random,
   ) {
     this.endsAt = now + GAME.TIME_LIMIT_MS;
   }
@@ -143,7 +145,7 @@ export class Game {
 
   /** Spawn (or respawn) a player and tell everyone. */
   spawnPlayer(p: GamePlayer, players: GamePlayer[]): void {
-    this.spawnAt(p, this.pickSpawn(p, players));
+    this.spawnAt(p, selectSpawn(this.map.spawns, p, players, this.random));
   }
 
   broadcastScores(players: GamePlayer[]): void {
@@ -161,24 +163,6 @@ export class Game {
     p.pitch = 0;
     p.history.reset();
     this.broadcast({ type: 'respawn', id: p.id, pos: vecToArr(spawn.pos), yaw: spawn.yaw });
-  }
-
-  /** Spawn point with the greatest distance to the nearest living enemy. */
-  private pickSpawn(forPlayer: GamePlayer, players: GamePlayer[]): SpawnDef {
-    const spawns = this.map.spawns;
-    const enemies = players.filter((q) => q !== forPlayer && q.alive);
-    if (enemies.length === 0) return spawns[Math.floor(Math.random() * spawns.length)]!;
-    let best = spawns[0]!;
-    let bestDist = -1;
-    for (const s of spawns) {
-      let minD = Infinity;
-      for (const e of enemies) minD = Math.min(minD, distanceSq(s.pos, e.state.pos));
-      if (minD > bestDist) {
-        bestDist = minD;
-        best = s;
-      }
-    }
-    return best;
   }
 
   private standings(players: GamePlayer[]): Standing[] {
@@ -206,11 +190,7 @@ export class Game {
     this.broadcast({ type: 'matchStart', match: this.matchInfo() });
     // Everyone respawns at a distinct spawn point (round-robin if more players
     // than spawns).
-    const order = this.map.spawns.map((_, i) => i);
-    for (let i = order.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [order[i], order[j]] = [order[j]!, order[i]!];
-    }
+    const order = shuffledIndices(this.map.spawns.length, this.random);
     players.forEach((p, i) => this.spawnAt(p, this.map.spawns[order[i % order.length]!]!));
   }
 }

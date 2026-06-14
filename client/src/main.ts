@@ -5,7 +5,7 @@
 // on. Any boot failure lands on the HUD connection screen.
 // ---------------------------------------------------------------------------
 
-import { vortexPortal } from '../../shared/maps/vortexportal';
+import { activeMap } from '../../shared/maps';
 import { createRenderer } from './render/scene';
 import { createHud } from './hud';
 import { createAudio } from './audio';
@@ -45,7 +45,7 @@ async function boot(): Promise<void> {
     hud.setConnectionMessage('Connecting to Discord…');
     const discord = await initDiscord();
 
-    const renderer = createRenderer(vortexPortal, appRoot);
+    const renderer = createRenderer(activeMap, appRoot);
     window.addEventListener('resize', () => renderer.resize());
 
     audio = createAudio();
@@ -85,13 +85,13 @@ async function boot(): Promise<void> {
             hud: hud!,
             audio: audio!,
             discord,
-            map: vortexPortal,
+            map: activeMap,
             welcome: msg,
           });
           bootEl?.remove();
           hud!.setPauseVisible(true); // "click to play" until pointer lock
-          if (discord.isMobile) {
-            hud!.showMessage('QuakeLite is best played on desktop', 6000);
+          if (discord.isMobile || input!.isTouchMode()) {
+            hud!.showMessage('Touch controls enabled', 3500);
           }
         } else {
           game?.onServerMsg(msg);

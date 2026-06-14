@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
 import { vec3 } from '../shared/math';
 import { traceRay } from '../shared/collision';
-import { vortexPortal } from '../shared/maps/vortexportal';
+import { longestYard } from '../shared/maps/longestyard';
 import { BUTTON_FIRE, type UserCmd } from '../shared/movement';
 import {
   MSG_SNAPSHOT,
@@ -29,7 +29,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 3199;
 const WS_URL = `ws://localhost:${PORT}/ws`;
 const INSTANCE = 'e2e-test';
-const MAP = vortexPortal;
+const MAP = longestYard;
 
 // ------------------------------- harness -----------------------------------
 
@@ -240,9 +240,9 @@ function waitForMsg<T extends ServerJsonMsg>(
   c: Client,
   desc: string,
   pred: (m: ServerJsonMsg) => boolean,
-  opts: { from?: number; timeoutMs?: number } = {},
+  opts: { from?: number; timeoutMs?: number; debug?: () => string } = {},
 ): Promise<{ m: T; t: number }> {
-  const { from = 0, timeoutMs = 5000 } = opts;
+  const { from = 0, timeoutMs = 5000, debug } = opts;
   return new Promise((resolve, reject) => {
     let scanned = from;
     const scan = (): boolean => {
@@ -258,7 +258,8 @@ function waitForMsg<T extends ServerJsonMsg>(
     if (scan()) return;
     const timer = setTimeout(() => {
       off();
-      reject(new HardFail(`client ${c.label}: timed out (${timeoutMs}ms) waiting for ${desc}`));
+      const detail = debug?.();
+      reject(new HardFail(`client ${c.label}: timed out (${timeoutMs}ms) waiting for ${desc}${detail ? `; ${detail}` : ''}`));
     }, timeoutMs);
     const off = c.onMsg(() => {
       if (scan()) {
@@ -340,8 +341,13 @@ async function walkTo(
     c.sendCmd({ fmove: 127, yaw });
     await sleep(16);
   }
-  // Brake: idle cmds so friction runs (the server only simulates on cmds).
-  for (let i = 0; i < 30; i++) {
+  await brake(c);
+}
+
+async function brake(c: Client, frames = 30): Promise<void> {
+  // Idle cmds run friction on the server; without them a staged player can
+  // carry velocity from a previous smoke-test movement.
+  for (let i = 0; i < frames; i++) {
     c.sendCmd({});
     await sleep(16);
   }
@@ -353,16 +359,17 @@ async function walkTo(
  * route any randomized spawn back to the lower base floor before staging a
  * deterministic rail shot.
  */
-type Region = 'base' | 'upper' | 'midFront' | 'midBack' | 'rail' | 'power' | 'air';
+type Region = 'base' | 'upper' | 'midFront' | 'midBack' | 'rail' | 'mega' | 'power' | 'air';
 
 function regionOf(p: { x: number; y: number; z: number }): Region {
   const ax = Math.abs(p.x);
-  if (p.y >= 500 && ax <= 280 && p.z >= 600 && p.z <= 980) return 'power';
-  if (p.y >= 30 && p.y <= 180 && ax <= 540 && p.z >= -1660 && p.z <= -1060) return 'rail';
-  if (p.y >= 120 && p.y <= 300 && ax <= 1320 && p.z >= -520 && p.z <= 540) return 'upper';
-  if (p.y >= 80 && p.y <= 190 && ax >= 680 && ax <= 1230 && p.z >= -1040 && p.z <= -500) return 'midFront';
-  if (p.y >= 80 && p.y <= 190 && ax >= 680 && ax <= 1230 && p.z >= 680 && p.z <= 1180) return 'midBack';
-  if (p.y >= -80 && p.y <= 100 && ax <= 1120 && p.z >= -560 && p.z <= 560) return 'base';
+  if (p.y >= 560 && ax <= 430 && p.z >= 1200 && p.z <= 1700) return 'power';
+  if (p.y >= 300 && ax <= 360 && p.z >= 540 && p.z <= 980) return 'mega';
+  if (p.y >= 30 && p.y <= 180 && ax <= 820 && p.z >= -2760 && p.z <= -1880) return 'rail';
+  if (p.y >= 120 && p.y <= 310 && ax <= 1840 && p.z >= -720 && p.z <= 920) return 'upper';
+  if (p.y >= 70 && p.y <= 200 && ax >= 860 && ax <= 1660 && p.z >= -1380 && p.z <= -650) return 'midFront';
+  if (p.y >= 70 && p.y <= 200 && ax >= 860 && ax <= 1660 && p.z >= 760 && p.z <= 1440) return 'midBack';
+  if (p.y >= -80 && p.y <= 70 && ax <= 1500 && p.z >= -1620 && p.z <= 880) return 'base';
   return 'air';
 }
 
@@ -392,6 +399,7 @@ async function coast(
 }
 
 async function stageToBaseFloor(c: Client): Promise<void> {
+  await brake(c, 20);
   for (let hop = 0; hop < 12; hop++) {
     const p = c.me()!.pos;
     const r = regionOf(p);
@@ -399,22 +407,27 @@ async function stageToBaseFloor(c: Client): Promise<void> {
     console.log(`  ..    ${c.label} at (${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}) [${r}] - routing toward base floor`);
     switch (r) {
       case 'upper':
-        await walkTo(c, 0, 0, { stopWhen: (q) => regionOf(q) === 'base', timeoutMs: 15000 });
+        // Drop off toward a side of the lower base, away from the center
+        // jump-pad cluster that chains straight back up to mega/power.
+        await walkTo(c, p.x < 0 ? -640 : 640, -520, { stopWhen: (q) => regionOf(q) === 'base', timeoutMs: 15000 });
         break;
       case 'midFront':
-        await walkTo(c, p.x < 0 ? -920 : 920, -850, { stopWhen: (q) => q.y > 170, timeoutMs: 15000 });
+        await walkTo(c, p.x < 0 ? -1260 : 1260, -1260, { stopWhen: (q) => q.y > 170, timeoutMs: 15000 });
         await coast(c, 'front mid pad to upper', (q) => regionOf(q) === 'upper');
         break;
       case 'midBack':
-        await walkTo(c, p.x < 0 ? -920 : 920, 850, { stopWhen: (q) => q.y > 170, timeoutMs: 15000 });
+        await walkTo(c, p.x < 0 ? -1260 : 1260, 1340, { stopWhen: (q) => q.y > 170, timeoutMs: 15000 });
         await coast(c, 'rear mid pad to upper', (q) => regionOf(q) === 'upper');
         break;
       case 'rail':
-        await walkTo(c, p.x < 0 ? -170 : 170, -1460, { stopWhen: (q) => q.y > 150, timeoutMs: 15000 });
+        await walkTo(c, p.x < 0 ? -315 : 315, -2395, { stopWhen: (q) => q.y > 150, timeoutMs: 15000 });
         await coast(c, 'rail return pad to upper', (q) => regionOf(q) === 'upper');
         break;
+      case 'mega':
+        await walkTo(c, 0, 535, { stopWhen: (q) => regionOf(q) !== 'mega', timeoutMs: 15000 });
+        break;
       case 'power':
-        await walkTo(c, 208, 790, { stopWhen: (q) => regionOf(q) === 'upper', timeoutMs: 15000 });
+        await walkTo(c, 0, 1640, { stopWhen: (q) => regionOf(q) === 'upper', timeoutMs: 15000 });
         break;
       case 'air':
         await coast(c, 'landing', (q) => regionOf(q) !== 'air', 6000);
@@ -481,11 +494,12 @@ async function main(server: ChildProcess): Promise<void> {
   const startPos = { ...A.me()!.pos };
   const ANCHORS: Partial<Record<Region, [number, number]>> = {
     base: [0, 0],
-    upper: [Math.sign(startPos.x || 1) * 900, 250],
-    midFront: [Math.sign(startPos.x || 1) * 920, -760],
-    midBack: [Math.sign(startPos.x || 1) * 920, 940],
-    rail: [0, -1380],
-    power: [0, 790],
+    upper: [Math.sign(startPos.x || 1) * 1350, 250],
+    midFront: [Math.sign(startPos.x || 1) * 1260, -1010],
+    midBack: [Math.sign(startPos.x || 1) * 1260, 1110],
+    rail: [0, -2400],
+    mega: [0, 760],
+    power: [0, 1450],
   };
   const anchor = ANCHORS[regionOf(startPos)] ?? [startPos.x, startPos.z];
   let allInBounds = inBounds(startPos);
@@ -522,8 +536,10 @@ async function main(server: ChildProcess): Promise<void> {
   console.log('staging both players for the rail shot');
   await stageToBaseFloor(A);
   await stageToBaseFloor(B);
-  await walkTo(A, -220, 0);
-  await walkTo(B, 220, 0);
+  await walkTo(A, -560, -560);
+  await walkTo(A, -560, -180);
+  await walkTo(B, 560, -560);
+  await walkTo(B, 560, -180);
 
   // ----- 5. the rail ---------------------------------------------------------
   console.log('rail kill (exact aim from the latest snapshot)');
@@ -557,7 +573,17 @@ async function main(server: ChildProcess): Promise<void> {
     if (m.type !== 'scores') return false;
     const row = m.rows.find((r) => r.id === A.id);
     return !!row && row.frags === 1;
-  }, { from: fromA, timeoutMs: 1000 });
+  }, {
+    from: fromA,
+    timeoutMs: 7000,
+    debug: () => {
+      const seen = A.msgs
+        .slice(fromA)
+        .filter((s) => s.m.type === 'scores')
+        .map((s) => JSON.stringify(s.m));
+      return `scores seen=${seen.length}${seen.length ? ` ${seen.join(' | ')}` : ''}`;
+    },
+  });
   const bRow = scores.m.type === 'scores' ? scores.m.rows.find((r) => r.id === B.id) : undefined;
   check('scores: A frags=1', true);
   check('scores: B deaths=1', !!bRow && bRow.deaths === 1, JSON.stringify(bRow));

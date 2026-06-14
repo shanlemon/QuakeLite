@@ -12,7 +12,9 @@
     "build": "npm run build -w client",
     "start": "npm run start -w server",
     "typecheck": "tsc -p client --noEmit && tsc -p server --noEmit",
-    "test": "tsx tests/movement.test.ts && tsx tests/protocol.test.ts && tsx tests/map.test.ts",
+    "test": "tsx tests/movement.test.ts && tsx tests/protocol.test.ts && tsx tests/interpolation.test.ts && tsx tests/playerRegistry.test.ts && tsx tests/firePreview.test.ts && tsx tests/frameCommand.test.ts && tsx tests/inputState.test.ts && tsx tests/hudPresenter.test.ts && tsx tests/textureCanvas.test.ts && tsx tests/settings.test.ts && tsx tests/wsio.test.ts && tsx tests/discord.test.ts && tsx tests/identity.test.ts && tsx tests/app.test.ts && tsx tests/connection.test.ts && tsx tests/playerInput.test.ts && tsx tests/spawns.test.ts && tsx tests/map.test.ts",
+    "test:e2e": "tsx tests/e2e.test.ts",
+    "test:all": "npm test && npm run test:e2e",
     "tunnel": "cloudflared tunnel --url http://localhost:5173",
     "tunnel:prod": "cloudflared tunnel --url http://localhost:3001"
   },
