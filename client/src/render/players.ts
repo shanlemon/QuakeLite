@@ -1,6 +1,6 @@
 // Remote player avatars: tinted capsule body, head + visor, a small railgun
 // tracking yaw+pitch, and a camera-facing nameplate sprite that fades with
-// distance. Avatars are pooled and recycled — no per-frame allocation.
+// distance. Avatars are pooled and recycled - no per-frame allocation.
 
 import * as THREE from 'three';
 import { playerColor } from '../../../shared/constants';
@@ -60,10 +60,17 @@ export class PlayerAvatars {
   private readonly bodyGeo = new THREE.CapsuleGeometry(13, 18, 4, 12);
   private readonly headGeo = new THREE.SphereGeometry(9, 12, 10);
   private readonly visorGeo = new THREE.BoxGeometry(13, 5, 5);
-  private readonly gunGeo = new THREE.BoxGeometry(3.5, 4.5, 22);
-  private readonly gunGlowGeo = new THREE.BoxGeometry(1.4, 1.4, 23);
+  private readonly gunBodyGeo = new THREE.BoxGeometry(4.5, 3.1, 11.5);
+  private readonly gunTopGeo = new THREE.BoxGeometry(3.3, 0.75, 6.5);
+  private readonly gunBarrelGeo = new THREE.CylinderGeometry(0.55, 0.7, 10, 10);
+  private readonly gunMuzzleGeo = new THREE.CylinderGeometry(0.8, 0.8, 1.1, 10);
+  private readonly gunWindowGeo = new THREE.BoxGeometry(1.75, 0.42, 4.6);
+  private readonly gunPipeGeo = new THREE.CylinderGeometry(0.32, 0.32, 5.2, 8);
+  private readonly gunGripGeo = new THREE.BoxGeometry(1.6, 3.4, 1.6);
   private readonly visorMat = new THREE.MeshLambertMaterial({ color: 0x0d0f16 });
-  private readonly gunMat = new THREE.MeshLambertMaterial({ color: 0x23262e, emissive: 0x07080c });
+  private readonly gunMat = new THREE.MeshLambertMaterial({ color: 0x6c3f24, emissive: 0x140905 });
+  private readonly gunDarkMat = new THREE.MeshLambertMaterial({ color: 0x17181d, emissive: 0x07080c });
+  private readonly gunSilverMat = new THREE.MeshLambertMaterial({ color: 0xa9a49a, emissive: 0x151820 });
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -111,11 +118,31 @@ export class PlayerAvatars {
     const gunPivot = new THREE.Group();
     gunPivot.position.set(9.5, 42, -2);
     group.add(gunPivot);
-    const gun = new THREE.Mesh(this.gunGeo, this.gunMat);
-    gun.position.z = -10;
+
+    const gun = new THREE.Mesh(this.gunBodyGeo, this.gunMat);
+    gun.position.set(0, 0, -8);
     gunPivot.add(gun);
-    const gunGlow = new THREE.Mesh(this.gunGlowGeo, mats.glow);
-    gunGlow.position.set(0, -2.9, -10.5);
+    const gunTop = new THREE.Mesh(this.gunTopGeo, this.gunMat);
+    gunTop.position.set(0, 1.8, -8);
+    gunPivot.add(gunTop);
+    const barrel = new THREE.Mesh(this.gunBarrelGeo, this.gunSilverMat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0, 0.25, -17);
+    gunPivot.add(barrel);
+    const muzzle = new THREE.Mesh(this.gunMuzzleGeo, this.gunSilverMat);
+    muzzle.rotation.x = Math.PI / 2;
+    muzzle.position.set(0, 0.25, -22);
+    gunPivot.add(muzzle);
+    const pipe = new THREE.Mesh(this.gunPipeGeo, this.gunSilverMat);
+    pipe.rotation.x = Math.PI / 2;
+    pipe.position.set(-2.65, -0.65, -8);
+    gunPivot.add(pipe);
+    const grip = new THREE.Mesh(this.gunGripGeo, this.gunDarkMat);
+    grip.position.set(0, -2.9, -3.4);
+    grip.rotation.x = 0.28;
+    gunPivot.add(grip);
+    const gunGlow = new THREE.Mesh(this.gunWindowGeo, mats.glow);
+    gunGlow.position.set(0, 2.35, -8.2);
     gunPivot.add(gunGlow);
 
     const plateCanvas = document.createElement('canvas');
@@ -229,9 +256,16 @@ export class PlayerAvatars {
     this.bodyGeo.dispose();
     this.headGeo.dispose();
     this.visorGeo.dispose();
-    this.gunGeo.dispose();
-    this.gunGlowGeo.dispose();
+    this.gunBodyGeo.dispose();
+    this.gunTopGeo.dispose();
+    this.gunBarrelGeo.dispose();
+    this.gunMuzzleGeo.dispose();
+    this.gunWindowGeo.dispose();
+    this.gunPipeGeo.dispose();
+    this.gunGripGeo.dispose();
     this.visorMat.dispose();
     this.gunMat.dispose();
+    this.gunDarkMat.dispose();
+    this.gunSilverMat.dispose();
   }
 }
