@@ -1,5 +1,6 @@
 import type { Settings } from './types';
 import { sanitizeOptionalPlayerName } from '../../shared/playerName';
+import { normalizeSensitivity } from './inputState';
 
 export interface SettingsStorage {
   getItem(key: string): string | null;
@@ -29,7 +30,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
   return {
     playerName: sanitizeOptionalPlayerName(raw?.playerName),
     fov: clampNumber(finiteSetting(raw?.fov, DEFAULT_SETTINGS.fov), 90, 130),
-    sensitivity: clampNumber(finiteSetting(raw?.sensitivity, DEFAULT_SETTINGS.sensitivity), 0.5, 6),
+    sensitivity: normalizeSensitivity(finiteSetting(raw?.sensitivity, DEFAULT_SETTINGS.sensitivity)),
     volume: clampNumber(finiteSetting(raw?.volume, DEFAULT_SETTINGS.volume), 0, 1),
   };
 }

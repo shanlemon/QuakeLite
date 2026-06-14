@@ -88,7 +88,7 @@ export interface Settings {
   /** Empty string means use the generated/Discord default. */
   playerName: string;
   fov: number; // 90..130, default 105
-  sensitivity: number; // 0.5..6, default 2 (arbitrary scale; 2 ≈ q3 sens 2.5-ish)
+  sensitivity: number; // 0.05..20, default 2 (arbitrary scale; 2 ≈ q3 sens 2.5-ish)
   volume: number; // 0..1
 }
 

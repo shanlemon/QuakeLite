@@ -41,7 +41,7 @@ console.log('client settings');
 
 {
   const s = normalizeSettings({ playerName: '  Alice\t\nPlayer  ', fov: 1000, sensitivity: -10, volume: 4 });
-  check('normalizeSettings clamps out-of-range values', s.fov === 130 && s.sensitivity === 0.5 && s.volume === 1);
+  check('normalizeSettings clamps out-of-range values', s.fov === 130 && s.sensitivity === 0.05 && s.volume === 1);
   check('normalizeSettings sanitizes player names', s.playerName === 'Alice Player', s.playerName);
 }
 
@@ -53,9 +53,9 @@ console.log('client settings');
 
 {
   const storage = new MemoryStorage();
-  storage.setItem(SETTINGS_KEY, JSON.stringify({ playerName: 'Violet', fov: 90, sensitivity: 6, volume: 0 }));
+  storage.setItem(SETTINGS_KEY, JSON.stringify({ playerName: 'Violet', fov: 90, sensitivity: 20, volume: 0 }));
   const s = loadSettings(storage);
-  check('loadSettings reads from injected storage', s.playerName === 'Violet' && s.fov === 90 && s.sensitivity === 6 && s.volume === 0);
+  check('loadSettings reads from injected storage', s.playerName === 'Violet' && s.fov === 90 && s.sensitivity === 20 && s.volume === 0);
   check('loadSettings returns defaults without storage', JSON.stringify(loadSettings(null)) === JSON.stringify(DEFAULT_SETTINGS));
 }
 
@@ -63,7 +63,7 @@ console.log('client settings');
   const storage = new MemoryStorage();
   saveSettings({ playerName: '0123456789 0123456789 0123456789', fov: 140, sensitivity: 0, volume: -1 }, storage);
   const saved = JSON.parse(storage.getItem(SETTINGS_KEY) ?? '{}') as { playerName?: string; fov?: number; sensitivity?: number; volume?: number };
-  check('saveSettings stores normalized settings', saved.playerName?.length === 24 && saved.fov === 130 && saved.sensitivity === 0.5 && saved.volume === 0);
+  check('saveSettings stores normalized settings', saved.playerName?.length === 24 && saved.fov === 130 && saved.sensitivity === 0.05 && saved.volume === 0);
 }
 
 {

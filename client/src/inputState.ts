@@ -44,6 +44,8 @@ export interface TouchControlCapabilities {
 }
 
 export const PITCH_LIMIT = 89 * DEG2RAD;
+export const SENSITIVITY_MIN = 0.05;
+export const SENSITIVITY_MAX = 20;
 
 export function createHeldInputState(): HeldInputState {
   return {
@@ -73,7 +75,7 @@ export function buildInputSample(state: HeldInputState, view: InputView): InputS
 }
 
 export function normalizeSensitivity(value: number): number {
-  return clamp(value, 0.05, 20);
+  return clamp(value, SENSITIVITY_MIN, SENSITIVITY_MAX);
 }
 
 export function applyLookDelta(

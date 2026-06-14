@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { GAME, playerColor } from '../../shared/constants';
 import { MAX_PLAYER_NAME_LENGTH } from '../../shared/playerName';
+import { SENSITIVITY_MAX, SENSITIVITY_MIN } from './inputState';
 import { clampNumber, loadSettings, normalizeSettings, saveSettings } from './settings';
 import {
   cooldownFrac,
@@ -46,6 +47,11 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 const FONT = `'Rajdhani','Segoe UI',Consolas,'Courier New',monospace`;
+const SENSITIVITY_STEP = 0.05;
+
+function formatSensitivity(v: number): string {
+  return v < 1 ? v.toFixed(2) : v.toFixed(1);
+}
 
 const CSS = `
 .ql-hud-root{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:10;
@@ -394,8 +400,8 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
     settings = { ...settings, fov: clampNumber(Math.round(v), 90, 130) };
     applySettings();
   });
-  sliderRow('SENSITIVITY', 0.5, 6, 0.1, settings.sensitivity, (v) => v.toFixed(1), (v) => {
-    settings = { ...settings, sensitivity: clampNumber(v, 0.5, 6) };
+  sliderRow('SENSITIVITY', SENSITIVITY_MIN, SENSITIVITY_MAX, SENSITIVITY_STEP, settings.sensitivity, formatSensitivity, (v) => {
+    settings = { ...settings, sensitivity: clampNumber(v, SENSITIVITY_MIN, SENSITIVITY_MAX) };
     applySettings();
   });
   sliderRow('VOLUME', 0, 100, 1, Math.round(settings.volume * 100), (v) => `${Math.round(v)}%`, (v) => {
