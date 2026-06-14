@@ -62,6 +62,8 @@ const MAT_MIRROR: Partial<Record<MaterialName, MaterialName>> = {
   glowBlue: 'glowRed',
   emblemRed: 'emblemBlue',
   emblemBlue: 'emblemRed',
+  triangleRed: 'triangleBlue',
+  triangleBlue: 'triangleRed',
 };
 
 // Team-tinted light colors swap with their counterpart; neutrals map to self.
@@ -128,6 +130,7 @@ function mirrorLight(l: LightDef): LightDef {
 // ---------------------------------------------------------------------------
 
 const half: Brush[] = [];
+const halfDetails: Brush[] = [];
 
 // ==== RED FLAG DECK (top deck, surface y=160) ===============================
 // 832 × 448 footprint, thin slab: fascia sides + pale panel top + neon trim.
@@ -231,7 +234,66 @@ half.push(box(72, 352, -388, 88, 536, -372, 'portalFrame')); // east col
 half.push(box(-72, 520, -388, 72, 552, -372, 'portalFrame')); // lintel
 half.push(box(-72, 352, -388, 72, 358, -372, 'glowRed')); // sill glow
 
+// ---------------------------------------------------------------------------
+// Render-only Quake Live detail layer. These thin decals and lips are kept
+// out of collision so the VQ3 movement tests stay tied to the authored solids.
+// ---------------------------------------------------------------------------
+
+// Flag deck: black runway slots, orange title lettering, triangular team mark
+// and a bright cyan-white edge lip from the Quake Live levelshot.
+halfDetails.push(box(-34, 162.4, -1848, -18, 163.4, -1450, 'stripeDark'));
+halfDetails.push(box(18, 162.4, -1848, 34, 163.4, -1450, 'stripeDark'));
+halfDetails.push(box(112, 162.8, -1740, 352, 163.8, -1544, 'titleMark'));
+halfDetails.push(box(-382, 162.8, -1548, -270, 163.8, -1436, 'triangleRed'));
+halfDetails.push(box(-424, 168, -1880, 424, 174, -1872, 'edgeGlow'));
+halfDetails.push(box(-424, 168, -1424, 424, 174, -1416, 'edgeGlow'));
+halfDetails.push(box(-424, 168, -1872, -416, 174, -1424, 'edgeGlow'));
+halfDetails.push(box(416, 168, -1872, 424, 174, -1424, 'edgeGlow'));
+
+// Middle deck drop zone: the same inset grooves and team identifier markings
+// visible around the Vortex Portal lower platforms.
+halfDetails.push(box(-28, 2, -1392, -14, 3, -1140, 'stripeDark'));
+halfDetails.push(box(14, 2, -1392, 28, 3, -1140, 'stripeDark'));
+halfDetails.push(box(70, 2.4, -1352, 270, 3.4, -1196, 'titleMark'));
+halfDetails.push(box(-258, 2.4, -1406, -166, 3.4, -1314, 'triangleRed'));
+halfDetails.push(box(-296, 8, -1432, 296, 14, -1424, 'edgeGlow'));
+halfDetails.push(box(-296, 8, -1104, 296, 14, -1096, 'edgeGlow'));
+halfDetails.push(box(-296, 8, -1424, -288, 14, -1104, 'edgeGlow'));
+halfDetails.push(box(288, 8, -1424, 296, 14, -1104, 'edgeGlow'));
+
+// Wing platforms use small white lips and team triangles so their silhouettes
+// match the elevated side decks in the reference shots.
+halfDetails.push(box(-792, 88, -1784, -488, 94, -1776, 'edgeGlow'));
+halfDetails.push(box(-792, 88, -1488, -488, 94, -1480, 'edgeGlow'));
+halfDetails.push(box(-792, 88, -1776, -784, 94, -1488, 'edgeGlow'));
+halfDetails.push(box(-496, 88, -1776, -488, 94, -1488, 'edgeGlow'));
+halfDetails.push(box(-764, 82, -1534, -692, 83, -1462, 'triangleRed'));
+halfDetails.push(box(440, 24, -1704, 680, 30, -1696, 'edgeGlow'));
+halfDetails.push(box(440, 24, -1440, 680, 30, -1432, 'edgeGlow'));
+halfDetails.push(box(440, 24, -1696, 448, 30, -1440, 'edgeGlow'));
+halfDetails.push(box(672, 24, -1696, 680, 30, -1440, 'edgeGlow'));
+
+// Portal station face cards: ornate blue/copper panels behind the swirl discs.
+halfDetails.push(box(-655.5, 78, -1380, -654.5, 248, -1260, 'portalCircuit'));
+halfDetails.push(box(654.5, 78, -1380, 655.5, 248, -1260, 'portalCircuit'));
+halfDetails.push(box(-76, 366, -371.5, 76, 536, -370.5, 'portalCircuit'));
+
+// Central platform: white/cyan lips and paired black insets make the high
+// thruster deck read like the QL center platform from the levelshot.
+halfDetails.push(box(-152, 360, -312, 152, 366, -304, 'edgeGlow'));
+halfDetails.push(box(304, 360, -152, 312, 366, 0, 'edgeGlow'));
+halfDetails.push(box(-312, 360, -152, -304, 366, 0, 'edgeGlow'));
+halfDetails.push(box(-120, 354, -248, -104, 355, -28, 'stripeDark'));
+halfDetails.push(box(104, 354, -248, 120, 355, -28, 'stripeDark'));
+
+// Freestanding side billboard and mast. The reference levelshot has a large
+// vertical Quake Live sign just off the deck edge with a lit support pole.
+halfDetails.push(box(920, 56, -1860, 936, 536, -1380, 'qlSign'));
+halfDetails.push(box(944, -46, -1644, 968, 560, -1604, 'pillar'));
+halfDetails.push(box(940, -70, -1656, 972, -46, -1592, 'glowWhite'));
+
 const brushes: Brush[] = [...half, ...half.map(mirrorBrush)];
+const details: Brush[] = [...halfDetails, ...halfDetails.map(mirrorBrush)];
 
 // ---------------------------------------------------------------------------
 // Launch pads (authored red/north set; mirrored for blue/south).
@@ -393,6 +455,7 @@ export const vortexPortal: MapDef = {
   name: 'vortexportal',
   displayName: 'Vortex Portal',
   brushes,
+  details,
   jumpPads,
   portals,
   spawns,

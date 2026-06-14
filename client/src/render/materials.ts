@@ -189,6 +189,169 @@ function floorAltTex(): THREE.CanvasTexture {
   });
 }
 
+function stripeDarkTex(): THREE.CanvasTexture {
+  // Black inset runway slots bordered by cyan-white pinstripes, matching the
+  // long deck grooves visible in the Quake Live levelshot.
+  return tex(256, 212, (ctx, s, rand) => {
+    ctx.fillStyle = rgb(8, 12, 16);
+    ctx.fillRect(0, 0, s, s);
+    const g = ctx.createLinearGradient(0, 0, s, 0);
+    g.addColorStop(0, 'rgba(80,220,255,0.55)');
+    g.addColorStop(0.5, 'rgba(230,255,255,0.95)');
+    g.addColorStop(1, 'rgba(80,220,255,0.55)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, s, 8);
+    ctx.fillRect(0, s - 8, s, 8);
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0, 9, s, 2);
+    ctx.fillRect(0, s - 11, s, 2);
+    for (let y = 24; y < s - 24; y += 24) {
+      ctx.fillStyle = `rgba(70,95,115,${(0.18 + rand() * 0.12).toFixed(3)})`;
+      ctx.fillRect(0, y, s, 2);
+    }
+    speckle(ctx, rand, s, 450, 1.2, 0.05);
+  });
+}
+
+function titleMarkTex(): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas(512);
+  ctx.clearRect(0, 0, 512, 512);
+  ctx.save();
+  ctx.translate(256, 256);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '800 58px Rajdhani, Segoe UI, Arial, sans-serif';
+  ctx.fillStyle = 'rgba(68,44,16,0.55)';
+  ctx.fillText('VORTEX PORTAL', 3, 3);
+  ctx.fillStyle = '#f1a83a';
+  ctx.fillText('VORTEX PORTAL', 0, 0);
+  ctx.restore();
+  const t = finishTexture(canvas);
+  t.generateMipmaps = false;
+  t.minFilter = THREE.LinearFilter;
+  return t;
+}
+
+function triangleTex(seed: number, main: [number, number, number]): THREE.CanvasTexture {
+  return tex(256, seed, (ctx, s, rand) => {
+    ctx.clearRect(0, 0, s, s);
+    ctx.fillStyle = rgba(main[0], main[1], main[2], 0.18);
+    ctx.beginPath();
+    ctx.moveTo(s * 0.50, s * 0.12);
+    ctx.lineTo(s * 0.88, s * 0.82);
+    ctx.lineTo(s * 0.12, s * 0.82);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = rgba(main[0], main[1], main[2], 0.92);
+    ctx.lineWidth = 18;
+    ctx.lineJoin = 'bevel';
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(245,255,255,0.78)';
+    ctx.lineWidth = 6;
+    ctx.stroke();
+    speckle(ctx, rand, s, 350, 1.3, 0.04);
+  });
+}
+
+function portalCircuitTex(): THREE.CanvasTexture {
+  // Decorative gate-card art inspired by the QL portal station panels: dark
+  // grid, copper mechanics, and a hot blue vortex core. It is procedural, not
+  // copied from the original texture.
+  return tex(512, 444, (ctx, s, rand) => {
+    ctx.fillStyle = rgb(18, 20, 24);
+    ctx.fillRect(0, 0, s, s);
+    const cell = s / 8;
+    ctx.strokeStyle = 'rgba(100,125,145,0.24)';
+    ctx.lineWidth = 2;
+    for (let i = 1; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * cell, 0);
+      ctx.lineTo(i * cell, s);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i * cell);
+      ctx.lineTo(s, i * cell);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(235,245,255,0.72)';
+    ctx.lineWidth = 18;
+    ctx.strokeRect(28, 28, s - 56, s - 56);
+    ctx.strokeStyle = 'rgba(40,130,190,0.85)';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(52, 52, s - 104, s - 104);
+
+    ctx.save();
+    ctx.translate(s / 2, s / 2);
+    for (let i = 0; i < 14; i++) {
+      ctx.rotate(Math.PI / 7);
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(176,100,48,0.72)' : 'rgba(120,150,170,0.58)';
+      ctx.fillRect(-16, -s * 0.40, 32, s * 0.20);
+    }
+    for (const r of [130, 96, 58]) {
+      ctx.strokeStyle = r === 58 ? 'rgba(160,230,255,0.92)' : 'rgba(120,150,170,0.58)';
+      ctx.lineWidth = r === 58 ? 8 : 10;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const g = ctx.createRadialGradient(0, 0, 8, 0, 0, 96);
+    g.addColorStop(0, 'rgba(245,255,255,1)');
+    g.addColorStop(0.34, 'rgba(80,220,255,0.86)');
+    g.addColorStop(1, 'rgba(20,70,120,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, 96, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    speckle(ctx, rand, s, 1000, 2, 0.055);
+  });
+}
+
+function qlSignTex(): THREE.CanvasTexture {
+  const { canvas, ctx } = makeCanvas(512);
+  const s = 512;
+  ctx.fillStyle = rgb(28, 30, 34);
+  ctx.fillRect(0, 0, s, s);
+  const g = ctx.createLinearGradient(0, 0, s, s);
+  g.addColorStop(0, 'rgba(255,255,255,0.13)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.02)');
+  g.addColorStop(1, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, s, s);
+  ctx.strokeStyle = 'rgba(235,240,245,0.86)';
+  ctx.lineWidth = 18;
+  ctx.strokeRect(32, 64, s - 64, s - 128);
+  ctx.fillStyle = '#f3f3f0';
+  ctx.fillRect(62, 196, 388, 120);
+  ctx.fillStyle = '#bb241f';
+  ctx.fillRect(72, 210, 368, 92);
+  ctx.fillStyle = '#f7f7f2';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = '900 82px Rajdhani, Segoe UI, Arial, sans-serif';
+  ctx.fillText('QUAKE', 188, 256);
+  ctx.fillText('LIVE', 348, 256);
+  ctx.fillStyle = '#f7f7f2';
+  ctx.beginPath();
+  ctx.arc(264, 256, 74, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#bb241f';
+  ctx.beginPath();
+  ctx.arc(264, 256, 54, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#f7f7f2';
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.arc(264, 256, 30, -Math.PI * 0.2, Math.PI * 1.2);
+  ctx.stroke();
+  const t = finishTexture(canvas);
+  t.generateMipmaps = false;
+  t.minFilter = THREE.LinearFilter;
+  return t;
+}
+
 function wallTex(): THREE.CanvasTexture {
   // White-blue marbled fascia blocks with horizontal seams — the platform
   // sides in crop_ql_topcenter, very visible across the void.
@@ -514,10 +677,21 @@ export function createMaterials(): MaterialSet {
     new THREE.MeshLambertMaterial({ map: track(map), ...extra });
   // Unlit — neon bands must read emissive regardless of lighting.
   const neon = (map: THREE.CanvasTexture) => new THREE.MeshBasicMaterial({ map: track(map) });
+  const decal = (map: THREE.CanvasTexture, opacity = 1) =>
+    new THREE.MeshBasicMaterial({
+      map: track(map),
+      transparent: true,
+      opacity,
+      alphaTest: 0.02,
+      depthWrite: false,
+    });
 
   const byName: Record<MaterialName, THREE.Material> = {
     floor: lambert(floorTex()),
     floorAlt: lambert(floorAltTex()),
+    stripeDark: lambert(stripeDarkTex()),
+    edgeGlow: new THREE.MeshBasicMaterial({ color: 0xe5fdff }),
+    titleMark: decal(titleMarkTex(), 0.94),
     wall: lambert(wallTex()),
     wallDark: lambert(wallDarkTex()),
     ceiling: lambert(ceilingTex()),
@@ -539,6 +713,10 @@ export function createMaterials(): MaterialSet {
     glowRed: new THREE.MeshBasicMaterial({ color: 0xff5030 }),
     glowBlue: new THREE.MeshBasicMaterial({ color: 0x46c8ff }),
     glowWhite: new THREE.MeshBasicMaterial({ color: 0xeffaff }),
+    portalCircuit: lambert(portalCircuitTex(), { emissive: 0x123040, emissiveIntensity: 0.45 }),
+    qlSign: lambert(qlSignTex(), { emissive: 0x2b1717, emissiveIntensity: 0.3 }),
+    triangleRed: decal(triangleTex(891, [225, 44, 36]), 0.84),
+    triangleBlue: decal(triangleTex(892, [70, 142, 255]), 0.84),
     // Painted team insignia inlays (world.ts fits one tile per brush).
     emblemRed: lambert(emblemTex(881, [198, 44, 32], [116, 20, 14])),
     emblemBlue: lambert(emblemTex(882, [44, 110, 226], [18, 50, 128])),

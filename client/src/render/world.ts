@@ -1,8 +1,8 @@
 // Static world geometry: one merged BufferGeometry + one draw call per
 // material. UVs are world-aligned planar projections (1 texture repeat per
 // 128 units) so textures never stretch and tile seamlessly across brushes.
-// Exception: emblem decal inlays get exactly ONE texture tile fitted across
-// the brush so the circular insignia always lands whole on the deck.
+// Exception: decal/sign inlays get exactly ONE texture tile fitted across the
+// brush so logos and floor markings land whole instead of tiling.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -12,7 +12,15 @@ import type { MaterialSet } from './materials';
 const UV_SCALE = 1 / 128;
 
 /** Materials whose texture is fitted once per brush instead of world-tiled. */
-const FIT_PER_BRUSH: ReadonlySet<MaterialName> = new Set<MaterialName>(['emblemRed', 'emblemBlue']);
+const FIT_PER_BRUSH: ReadonlySet<MaterialName> = new Set<MaterialName>([
+  'emblemRed',
+  'emblemBlue',
+  'titleMark',
+  'portalCircuit',
+  'qlSign',
+  'triangleRed',
+  'triangleBlue',
+]);
 
 /**
  * Rewrite UVs from world position, projected along each face's normal axis.
@@ -98,7 +106,7 @@ export function buildWorld(map: MapDef, mats: MaterialSet): THREE.Group {
   group.name = 'world';
 
   const byMat = new Map<MaterialName, THREE.BoxGeometry[]>();
-  for (const brush of map.brushes) {
+  for (const brush of [...map.brushes, ...(map.details ?? [])]) {
     let list = byMat.get(brush.mat);
     if (!list) {
       list = [];

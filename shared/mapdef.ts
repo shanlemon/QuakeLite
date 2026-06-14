@@ -10,6 +10,9 @@ import type { Vec3 } from './math';
 export type MaterialName =
   | 'floor'
   | 'floorAlt'
+  | 'stripeDark'
+  | 'edgeGlow'
+  | 'titleMark'
   | 'wall'
   | 'wallDark'
   | 'ceiling'
@@ -25,6 +28,10 @@ export type MaterialName =
   | 'glowRed'
   | 'glowBlue'
   | 'glowWhite'
+  | 'portalCircuit'
+  | 'qlSign'
+  | 'triangleRed'
+  | 'triangleBlue'
   /** Painted team emblem deck inlays (big circular insignia). */
   | 'emblemRed'
   | 'emblemBlue';
@@ -85,7 +92,10 @@ export interface LightDef {
 export interface MapDef {
   name: string;
   displayName: string;
+  /** Solid collision/render brushes. */
   brushes: Brush[];
+  /** Render-only detail brushes: decals, thin lips, signs, nonblocking trim. */
+  details?: Brush[];
   jumpPads: JumpPadDef[];
   portals: PortalDef[];
   spawns: SpawnDef[];
