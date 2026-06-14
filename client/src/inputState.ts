@@ -33,6 +33,16 @@ export interface TouchStickInput {
   right: boolean;
 }
 
+export type ControlModeOverride = 'desktop' | 'touch' | null;
+
+export interface TouchControlCapabilities {
+  maxTouchPoints: number;
+  pointerCoarse: boolean;
+  anyPointerFine: boolean;
+  anyHover: boolean;
+  override?: ControlModeOverride;
+}
+
 export const PITCH_LIMIT = 89 * DEG2RAD;
 
 export function createHeldInputState(): HeldInputState {
@@ -109,4 +119,24 @@ export function resolveTouchStick(rawX: number, rawY: number, radius: number, de
     left: mx < -deadzone,
     right: mx > deadzone,
   };
+}
+
+export function parseControlModeOverride(search: string): ControlModeOverride {
+  const params = new URLSearchParams(search);
+  const raw = (params.get('controls') ?? params.get('input') ?? '').toLowerCase();
+  if (raw === 'desktop' || raw === 'mouse' || raw === 'pc') return 'desktop';
+  if (raw === 'touch' || raw === 'mobile') return 'touch';
+  return null;
+}
+
+export function shouldUseTouchControls(capabilities: TouchControlCapabilities): boolean {
+  if (capabilities.override === 'desktop') return false;
+  if (capabilities.override === 'touch') return true;
+
+  // Touchscreen Windows laptops often report maxTouchPoints > 0 while still
+  // having a precise mouse/trackpad. Prefer desktop controls when a fine or
+  // hover-capable pointer is present.
+  if (capabilities.anyPointerFine || capabilities.anyHover) return false;
+
+  return capabilities.pointerCoarse || capabilities.maxTouchPoints > 0;
 }

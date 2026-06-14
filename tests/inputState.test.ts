@@ -7,8 +7,10 @@ import {
   clearHeldInput,
   createHeldInputState,
   normalizeSensitivity,
+  parseControlModeOverride,
   resolveTouchStick,
   setViewAngles,
+  shouldUseTouchControls,
 } from '../client/src/inputState';
 import { BUTTON_FIRE, BUTTON_JUMP } from '../shared/movement';
 
@@ -78,6 +80,37 @@ console.log('client input state');
   check('touch stick detects forward', forward.fwd && !forward.back && !forward.left && !forward.right);
   const diagonal = resolveTouchStick(100, 100, 50, 0.16);
   check('touch stick detects diagonal movement', diagonal.back && diagonal.right && !diagonal.fwd && !diagonal.left);
+}
+
+{
+  check('desktop override disables touch controls', !shouldUseTouchControls({
+    maxTouchPoints: 5,
+    pointerCoarse: true,
+    anyPointerFine: false,
+    anyHover: false,
+    override: 'desktop',
+  }));
+  check('touch override enables touch controls', shouldUseTouchControls({
+    maxTouchPoints: 0,
+    pointerCoarse: false,
+    anyPointerFine: true,
+    anyHover: true,
+    override: 'touch',
+  }));
+  check('touchscreen PC with mouse stays desktop', !shouldUseTouchControls({
+    maxTouchPoints: 10,
+    pointerCoarse: false,
+    anyPointerFine: true,
+    anyHover: true,
+  }));
+  check('coarse touch-only device uses touch controls', shouldUseTouchControls({
+    maxTouchPoints: 5,
+    pointerCoarse: true,
+    anyPointerFine: false,
+    anyHover: false,
+  }));
+  check('control override parser accepts desktop aliases', parseControlModeOverride('?controls=pc') === 'desktop');
+  check('control override parser accepts touch aliases', parseControlModeOverride('?input=mobile') === 'touch');
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nall input state tests passed');

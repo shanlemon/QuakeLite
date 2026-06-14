@@ -12,8 +12,10 @@ import {
   clearHeldInput,
   createHeldInputState,
   normalizeSensitivity,
+  parseControlModeOverride,
   resolveTouchStick,
   setViewAngles,
+  shouldUseTouchControls,
   type InputSample,
   type InputView,
 } from './inputState';
@@ -79,7 +81,14 @@ const TOUCH_CSS = `
 `;
 
 function supportsTouch(): boolean {
-  return navigator.maxTouchPoints > 0 || window.matchMedia?.('(pointer: coarse)').matches === true;
+  const mediaMatches = (query: string): boolean => window.matchMedia?.(query).matches === true;
+  return shouldUseTouchControls({
+    maxTouchPoints: navigator.maxTouchPoints ?? 0,
+    pointerCoarse: mediaMatches('(pointer: coarse)'),
+    anyPointerFine: mediaMatches('(any-pointer: fine)'),
+    anyHover: mediaMatches('(any-hover: hover)') || mediaMatches('(hover: hover)'),
+    override: parseControlModeOverride(window.location.search),
+  });
 }
 
 export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
