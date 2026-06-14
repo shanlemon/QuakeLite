@@ -8,7 +8,7 @@ export interface SettingsStorage {
 }
 
 export const SETTINGS_KEY = 'quakelite-settings';
-export const DEFAULT_SETTINGS: Settings = { playerName: '', fov: 105, sensitivity: 2, volume: 0.7 };
+export const DEFAULT_SETTINGS: Settings = { playerName: '', fov: 105, sensitivity: 2, renderScale: 1, volume: 0.7 };
 
 export function clampNumber(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
@@ -31,6 +31,7 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     playerName: sanitizeOptionalPlayerName(raw?.playerName),
     fov: clampNumber(finiteSetting(raw?.fov, DEFAULT_SETTINGS.fov), 90, 130),
     sensitivity: normalizeSensitivity(finiteSetting(raw?.sensitivity, DEFAULT_SETTINGS.sensitivity)),
+    renderScale: clampNumber(finiteSetting(raw?.renderScale, DEFAULT_SETTINGS.renderScale), 0.5, 1),
     volume: clampNumber(finiteSetting(raw?.volume, DEFAULT_SETTINGS.volume), 0, 1),
   };
 }

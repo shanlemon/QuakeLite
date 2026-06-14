@@ -13,7 +13,7 @@ import { initDiscord } from './discord';
 import { createInput, type InputSys } from './input';
 import { connectNet, type NetClient } from './net';
 import { createGame, type Game } from './game';
-import type { AudioSys, Hud, Settings } from './types';
+import type { AudioSys, Hud, Renderer, Settings } from './types';
 
 async function boot(): Promise<void> {
   const bootEl = document.getElementById('boot');
@@ -27,6 +27,7 @@ async function boot(): Promise<void> {
     // input/audio don't exist yet when the HUD is created — late-bind them.
     let input: InputSys | null = null;
     let audio: AudioSys | null = null;
+    let renderer: Renderer | null = null;
     let game: Game | null = null;
     let net: NetClient | null = null;
     let lastPlayerName = '';
@@ -40,6 +41,7 @@ async function boot(): Promise<void> {
       },
       onSettingsChange: (s: Settings) => {
         input?.setSensitivity(s.sensitivity);
+        renderer?.setRenderScale(s.renderScale);
         audio?.setMasterVolume(s.volume);
         if (s.playerName !== lastPlayerName) {
           net?.sendName(s.playerName);
@@ -52,8 +54,8 @@ async function boot(): Promise<void> {
     hud.setConnectionMessage('Connecting to Discord…');
     const discord = await initDiscord();
 
-    const renderer = createRenderer(activeMap, appRoot);
-    window.addEventListener('resize', () => renderer.resize());
+    renderer = createRenderer(activeMap, appRoot);
+    window.addEventListener('resize', () => renderer?.resize());
 
     audio = createAudio();
     input = createInput(appRoot, {
@@ -64,6 +66,7 @@ async function boot(): Promise<void> {
     const initial = hud.getSettings();
     lastPlayerName = initial.playerName;
     input.setSensitivity(initial.sensitivity);
+    renderer.setRenderScale(initial.renderScale);
     audio.setMasterVolume(initial.volume);
 
     hud.setConnectionMessage('Joining match…');
@@ -87,7 +90,7 @@ async function boot(): Promise<void> {
           game = createGame({
             net,
             input: input!,
-            renderer,
+            renderer: renderer!,
             hud: hud!,
             audio: audio!,
             discord,

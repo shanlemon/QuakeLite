@@ -16,12 +16,18 @@ import { Viewmodel } from './viewmodel';
 import { Effects } from './effects';
 
 const MAX_FRAME_DT_MS = 100;
+const MIN_RENDER_SCALE = 0.5;
+const MAX_RENDER_SCALE = 1;
 
 export const createRenderer: CreateRenderer = (map, container) => {
   const isSpace = map.space === true;
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  let renderScale = 1;
+  const applyPixelRatio = (): void => {
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * renderScale);
+  };
+  applyPixelRatio();
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Slightly hotter exposure in space — the pale QL decks should read bright
   // against the black void.
@@ -146,6 +152,13 @@ export const createRenderer: CreateRenderer = (map, container) => {
 
   return {
     resize(): void {
+      fitToContainer();
+    },
+    setRenderScale(scale: number): void {
+      const next = Math.min(MAX_RENDER_SCALE, Math.max(MIN_RENDER_SCALE, scale));
+      if (next === renderScale) return;
+      renderScale = next;
+      applyPixelRatio();
       fitToContainer();
     },
     render,

@@ -36,6 +36,8 @@ export interface RenderPlayer {
 export interface Renderer {
   /** Re-fit to the iframe size. Call on window resize. */
   resize(): void;
+  /** 0.5..1 render resolution multiplier. Lower is faster on weak/high-DPI GPUs. */
+  setRenderScale(scale: number): void;
   /**
    * Draw one frame. `timeMs` is a monotonic clock (performance.now()) used
    * for shader animation (portal swirl, pad pulse, beam fade).
@@ -89,6 +91,7 @@ export interface Settings {
   playerName: string;
   fov: number; // 90..130, default 105
   sensitivity: number; // 0.05..20, default 2 (arbitrary scale; 2 ≈ q3 sens 2.5-ish)
+  renderScale: number; // 0.5..1, default 1
   volume: number; // 0..1
 }
 

@@ -400,6 +400,10 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
     settings = { ...settings, fov: clampNumber(Math.round(v), 90, 130) };
     applySettings();
   });
+  sliderRow('RENDER SCALE', 50, 100, 5, Math.round(settings.renderScale * 100), (v) => `${Math.round(v)}%`, (v) => {
+    settings = { ...settings, renderScale: clampNumber(v / 100, 0.5, 1) };
+    applySettings();
+  });
   sliderRow('SENSITIVITY', SENSITIVITY_MIN, SENSITIVITY_MAX, SENSITIVITY_STEP, settings.sensitivity, formatSensitivity, (v) => {
     settings = { ...settings, sensitivity: clampNumber(v, SENSITIVITY_MIN, SENSITIVITY_MAX) };
     applySettings();
