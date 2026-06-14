@@ -95,7 +95,7 @@ export class Game {
 
     const eye = vec3(shooter.state.pos.x, shooter.state.pos.y + EYE_HEIGHT, shooter.state.pos.z);
     const dir = viewDir(cmd.yaw, cmd.pitch);
-    const world = traceRay(eye, dir, GAME.RAIL_RANGE, this.map.brushes);
+    const world = traceRay(eye, dir, GAME.RAIL_RANGE, this.map.brushes, this.map.prisms);
     const worldDist = world.fraction * GAME.RAIL_RANGE;
 
     // Rewind everyone else to the time the shooter was rendering them.

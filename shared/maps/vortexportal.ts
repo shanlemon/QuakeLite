@@ -33,6 +33,7 @@ import { vec3, wrapAngle, type Vec3 } from '../math';
 import type {
   MapDef,
   Brush,
+  PrismBrush,
   MaterialName,
   JumpPadDef,
   PortalDef,
@@ -52,6 +53,15 @@ function box(
   mat: MaterialName,
 ): Brush {
   return { min: vec3(x1, y1, z1), max: vec3(x2, y2, z2), mat };
+}
+
+function prism(
+  verts: readonly (readonly [number, number])[],
+  minY: number,
+  maxY: number,
+  mat: MaterialName,
+): PrismBrush {
+  return { verts: verts.map(([x, z]) => ({ x, z })), minY, maxY, mat };
 }
 
 // Red-side accents become blue-side accents in the mirrored half.
@@ -81,6 +91,15 @@ function mirrorBrush(b: Brush): Brush {
     min: vec3(-b.max.x, b.min.y, -b.max.z),
     max: vec3(-b.min.x, b.max.y, -b.min.z),
     mat: MAT_MIRROR[b.mat] ?? b.mat,
+  };
+}
+
+function mirrorPrism(p: PrismBrush): PrismBrush {
+  return {
+    verts: p.verts.map((v) => ({ x: -v.x, z: -v.z })),
+    minY: p.minY,
+    maxY: p.maxY,
+    mat: MAT_MIRROR[p.mat] ?? p.mat,
   };
 }
 
@@ -130,17 +149,26 @@ function mirrorLight(l: LightDef): LightDef {
 // ---------------------------------------------------------------------------
 
 const half: Brush[] = [];
+const halfPrisms: PrismBrush[] = [];
 const halfDetails: Brush[] = [];
 
 // ==== RED FLAG DECK (top deck, surface y=160) ===============================
-// 832 × 448 footprint, thin slab: fascia sides + pale panel top + neon trim.
-half.push(box(-416, 96, -1872, 416, 152, -1424, 'wall')); // fascia slab
-half.push(box(-416, 152, -1872, 416, 160, -1424, 'floor')); // walk surface
-// Neon trim bands along the top edges (red team accent).
-half.push(box(-416, 160, -1872, 416, 168, -1864, 'trimRed')); // north edge
-half.push(box(-416, 160, -1432, 416, 168, -1424, 'trimRed')); // south edge
-half.push(box(-416, 160, -1864, -408, 168, -1432, 'trimRed')); // west edge
-half.push(box(408, 160, -1864, 416, 168, -1432, 'trimRed')); // east edge
+// Clipped shield footprint: blunt north end, chamfered side noses, and a
+// narrowed southern drop lip.
+const flagDeck = [
+  [-448, -1896],
+  [448, -1896],
+  [448, -1816],
+  [520, -1744],
+  [520, -1552],
+  [416, -1400],
+  [-416, -1400],
+  [-520, -1552],
+  [-520, -1744],
+  [-448, -1816],
+] as const;
+halfPrisms.push(prism(flagDeck, 96, 152, 'wall'));
+halfPrisms.push(prism(flagDeck, 152, 160, 'floor'));
 // Grate strips running the deck's long axis (1u proud, walkable).
 half.push(box(-360, 160, -1864, -296, 161, -1432, 'floorAlt'));
 half.push(box(296, 160, -1864, 360, 161, -1432, 'floorAlt'));
@@ -150,12 +178,18 @@ half.push(box(-96, 160, -1744, 96, 162, -1552, 'emblemRed'));
 half.push(box(-36, 160, -1820, 36, 166, -1748, 'padBase'));
 
 // ==== RED MIDDLE DECK (surface y=0, toward map center) ======================
-half.push(box(-288, -56, -1424, 288, -8, -1104, 'wall'));
-half.push(box(-288, -8, -1424, 288, 0, -1104, 'floor'));
-half.push(box(-288, 0, -1424, 288, 8, -1416, 'trimRed'));
-half.push(box(-288, 0, -1112, 288, 8, -1104, 'trimRed'));
-half.push(box(-288, 0, -1416, -280, 8, -1112, 'trimRed'));
-half.push(box(280, 0, -1416, 288, 8, -1112, 'trimRed'));
+const middleDeck = [
+  [-320, -1456],
+  [320, -1456],
+  [368, -1408],
+  [332, -1136],
+  [272, -1088],
+  [-272, -1088],
+  [-332, -1136],
+  [-368, -1408],
+] as const;
+halfPrisms.push(prism(middleDeck, -56, -8, 'wall'));
+halfPrisms.push(prism(middleDeck, -8, 0, 'floor'));
 // Launch pad housings: two up to the flag deck (kept well clear of the deck
 // edge so the 56u player box clears the trim band mid-arc), two out to the
 // flank stations.
@@ -165,38 +199,66 @@ half.push(box(-288, 0, -1336, -216, 6, -1264, 'padBase'));
 half.push(box(216, 0, -1336, 288, 6, -1264, 'padBase'));
 
 // ==== RED RAIL WING (separate platform west, surface y=80) ==================
-half.push(box(-784, 24, -1776, -496, 72, -1488, 'wall'));
-half.push(box(-784, 72, -1776, -496, 80, -1488, 'floor'));
-half.push(box(-784, 80, -1776, -496, 88, -1768, 'trimRed'));
-half.push(box(-784, 80, -1496, -496, 88, -1488, 'trimRed'));
-half.push(box(-784, 80, -1768, -776, 88, -1496, 'trimRed'));
-half.push(box(-504, 80, -1768, -496, 88, -1496, 'trimRed'));
+const railWing = [
+  [-832, -1816],
+  [-528, -1816],
+  [-472, -1760],
+  [-472, -1504],
+  [-528, -1456],
+  [-832, -1456],
+  [-872, -1504],
+  [-872, -1760],
+] as const;
+halfPrisms.push(prism(railWing, 24, 72, 'wall'));
+halfPrisms.push(prism(railWing, 72, 80, 'floor'));
 half.push(box(-676, 80, -1668, -604, 86, -1596, 'padBase')); // pad → flag deck
 half.push(box(-668, 80, -1740, -612, 81, -1684, 'metal')); // rail spawn grate
 
 // ==== RED SCOUT WING (small low platform east, surface y=16) ================
-half.push(box(448, -40, -1696, 672, 8, -1440, 'wall'));
-half.push(box(448, 8, -1696, 672, 16, -1440, 'floor'));
-half.push(box(448, 16, -1696, 672, 24, -1688, 'trim'));
-half.push(box(448, 16, -1448, 672, 24, -1440, 'trim'));
+const scoutWing = [
+  [416, -1712],
+  [636, -1712],
+  [704, -1648],
+  [704, -1464],
+  [648, -1408],
+  [472, -1408],
+  [424, -1480],
+  [392, -1608],
+] as const;
+halfPrisms.push(prism(scoutWing, -40, 8, 'wall'));
+halfPrisms.push(prism(scoutWing, 8, 16, 'floor'));
 half.push(box(524, 16, -1606, 596, 22, -1534, 'padBase')); // pad → flag deck
 
 // ==== RED FLANK PORTAL STATIONS (west + east, surface y=64) =================
 // West station: pedestal deck + upright billboard-gate housing facing east.
-half.push(box(-688, 16, -1408, -496, 56, -1232, 'wall'));
-half.push(box(-688, 56, -1408, -496, 64, -1232, 'floor'));
-half.push(box(-688, 64, -1408, -496, 72, -1400, 'trimRed'));
-half.push(box(-688, 64, -1240, -496, 72, -1232, 'trimRed'));
+const westStation = [
+  [-760, -1440],
+  [-520, -1440],
+  [-472, -1392],
+  [-472, -1240],
+  [-520, -1192],
+  [-720, -1192],
+  [-760, -1264],
+] as const;
+const eastStation = [
+  [520, -1440],
+  [760, -1440],
+  [760, -1264],
+  [720, -1192],
+  [520, -1192],
+  [472, -1240],
+  [472, -1392],
+] as const;
+halfPrisms.push(prism(westStation, 16, 56, 'wall'));
+halfPrisms.push(prism(westStation, 56, 64, 'floor'));
+halfPrisms.push(prism(eastStation, 16, 56, 'wall'));
+halfPrisms.push(prism(eastStation, 56, 64, 'floor'));
 half.push(box(-688, 64, -1392, -672, 280, -1248, 'portalFrame')); // back panel
 half.push(box(-672, 64, -1392, -656, 248, -1368, 'portalFrame')); // north col
 half.push(box(-672, 64, -1272, -656, 248, -1248, 'portalFrame')); // south col
 half.push(box(-672, 232, -1368, -656, 264, -1272, 'portalFrame')); // lintel
 half.push(box(-672, 64, -1368, -656, 70, -1272, 'glowRed')); // sill glow strip
 // East station (authored too — the map mirror makes the BLUE pair).
-half.push(box(496, 16, -1408, 688, 56, -1232, 'wall'));
-half.push(box(496, 56, -1408, 688, 64, -1232, 'floor'));
-half.push(box(496, 64, -1408, 688, 72, -1400, 'trimRed'));
-half.push(box(496, 64, -1240, 688, 72, -1232, 'trimRed'));
 half.push(box(672, 64, -1392, 688, 280, -1248, 'portalFrame'));
 half.push(box(656, 64, -1392, 672, 248, -1368, 'portalFrame'));
 half.push(box(656, 64, -1272, 672, 248, -1248, 'portalFrame'));
@@ -205,29 +267,34 @@ half.push(box(656, 64, -1368, 672, 70, -1272, 'glowRed'));
 
 // ==== CENTRAL PLATFORM, north half (neutral, surface y=352) =================
 // Core (authored z<0 half; the mirror completes it, flush at z=0).
-half.push(box(-224, 304, -224, 224, 344, 0, 'wall'));
-half.push(box(-224, 344, -224, 224, 352, 0, 'floor'));
-// North edge extension (full); east/west south quarters (mirror completes).
-half.push(box(-144, 304, -304, 144, 344, -224, 'wall'));
-half.push(box(-144, 344, -304, 144, 352, -224, 'floor'));
-half.push(box(224, 304, -144, 304, 344, 0, 'wall'));
-half.push(box(224, 344, -144, 304, 352, 0, 'floor'));
-half.push(box(-304, 304, -144, -224, 344, 0, 'wall'));
-half.push(box(-304, 344, -144, -224, 352, 0, 'floor'));
-// Neutral cyan neon trim along the outer edges.
-half.push(box(-144, 352, -304, 144, 360, -296, 'trim')); // north ext edge
-half.push(box(-224, 352, -232, -144, 360, -224, 'trim'));
-half.push(box(144, 352, -232, 224, 360, -224, 'trim'));
-half.push(box(296, 352, -144, 304, 360, 0, 'trim'));
-half.push(box(-304, 352, -144, -296, 360, 0, 'trim'));
+const centralNorth = [
+  [-160, -336],
+  [160, -336],
+  [240, -288],
+  [352, -176],
+  [352, 0],
+  [-352, 0],
+  [-352, -176],
+  [-240, -288],
+] as const;
+const centralNorthStation = [
+  [-120, -448],
+  [120, -448],
+  [152, -400],
+  [128, -304],
+  [-128, -304],
+  [-152, -400],
+] as const;
+halfPrisms.push(prism(centralNorth, 304, 344, 'wall'));
+halfPrisms.push(prism(centralNorth, 344, 352, 'floor'));
+halfPrisms.push(prism(centralNorthStation, 304, 344, 'wall'));
+halfPrisms.push(prism(centralNorthStation, 344, 352, 'floor'));
 // Powerup pedestal at the very center (mirror completes the +z half).
 half.push(box(-28, 352, -28, 28, 372, 0, 'pillar'));
 half.push(box(-24, 372, -24, 24, 378, 0, 'glowWhite'));
 // Hop pad toward the north portal station.
 half.push(box(-116, 352, -168, -44, 358, -96, 'padBase'));
 // North portal station: jutting deck + housing facing the platform.
-half.push(box(-88, 304, -400, 88, 344, -304, 'wall'));
-half.push(box(-88, 344, -400, 88, 352, -304, 'floor'));
 half.push(box(-88, 352, -404, 88, 568, -388, 'portalFrame')); // back panel
 half.push(box(-88, 352, -388, -72, 536, -372, 'portalFrame')); // west col
 half.push(box(72, 352, -388, 88, 536, -372, 'portalFrame')); // east col
@@ -245,10 +312,6 @@ halfDetails.push(box(-34, 162.4, -1848, -18, 163.4, -1450, 'stripeDark'));
 halfDetails.push(box(18, 162.4, -1848, 34, 163.4, -1450, 'stripeDark'));
 halfDetails.push(box(112, 162.8, -1740, 352, 163.8, -1544, 'titleMark'));
 halfDetails.push(box(-382, 162.8, -1548, -270, 163.8, -1436, 'triangleRed'));
-halfDetails.push(box(-424, 168, -1880, 424, 174, -1872, 'edgeGlow'));
-halfDetails.push(box(-424, 168, -1424, 424, 174, -1416, 'edgeGlow'));
-halfDetails.push(box(-424, 168, -1872, -416, 174, -1424, 'edgeGlow'));
-halfDetails.push(box(416, 168, -1872, 424, 174, -1424, 'edgeGlow'));
 
 // Middle deck drop zone: the same inset grooves and team identifier markings
 // visible around the Vortex Portal lower platforms.
@@ -256,33 +319,17 @@ halfDetails.push(box(-28, 2, -1392, -14, 3, -1140, 'stripeDark'));
 halfDetails.push(box(14, 2, -1392, 28, 3, -1140, 'stripeDark'));
 halfDetails.push(box(70, 2.4, -1352, 270, 3.4, -1196, 'titleMark'));
 halfDetails.push(box(-258, 2.4, -1406, -166, 3.4, -1314, 'triangleRed'));
-halfDetails.push(box(-296, 8, -1432, 296, 14, -1424, 'edgeGlow'));
-halfDetails.push(box(-296, 8, -1104, 296, 14, -1096, 'edgeGlow'));
-halfDetails.push(box(-296, 8, -1424, -288, 14, -1104, 'edgeGlow'));
-halfDetails.push(box(288, 8, -1424, 296, 14, -1104, 'edgeGlow'));
 
-// Wing platforms use small white lips and team triangles so their silhouettes
-// match the elevated side decks in the reference shots.
-halfDetails.push(box(-792, 88, -1784, -488, 94, -1776, 'edgeGlow'));
-halfDetails.push(box(-792, 88, -1488, -488, 94, -1480, 'edgeGlow'));
-halfDetails.push(box(-792, 88, -1776, -784, 94, -1488, 'edgeGlow'));
-halfDetails.push(box(-496, 88, -1776, -488, 94, -1488, 'edgeGlow'));
+// Wing platform team triangles sit safely inside the clipped side decks.
 halfDetails.push(box(-764, 82, -1534, -692, 83, -1462, 'triangleRed'));
-halfDetails.push(box(440, 24, -1704, 680, 30, -1696, 'edgeGlow'));
-halfDetails.push(box(440, 24, -1440, 680, 30, -1432, 'edgeGlow'));
-halfDetails.push(box(440, 24, -1696, 448, 30, -1440, 'edgeGlow'));
-halfDetails.push(box(672, 24, -1696, 680, 30, -1440, 'edgeGlow'));
 
 // Portal station face cards: ornate blue/copper panels behind the swirl discs.
 halfDetails.push(box(-655.5, 78, -1380, -654.5, 248, -1260, 'portalCircuit'));
 halfDetails.push(box(654.5, 78, -1380, 655.5, 248, -1260, 'portalCircuit'));
 halfDetails.push(box(-76, 366, -371.5, 76, 536, -370.5, 'portalCircuit'));
 
-// Central platform: white/cyan lips and paired black insets make the high
-// thruster deck read like the QL center platform from the levelshot.
-halfDetails.push(box(-152, 360, -312, 152, 366, -304, 'edgeGlow'));
-halfDetails.push(box(304, 360, -152, 312, 366, 0, 'edgeGlow'));
-halfDetails.push(box(-312, 360, -152, -304, 366, 0, 'edgeGlow'));
+// Central platform paired black insets make the high thruster deck read like
+// the QL center platform from the levelshot.
 halfDetails.push(box(-120, 354, -248, -104, 355, -28, 'stripeDark'));
 halfDetails.push(box(104, 354, -248, 120, 355, -28, 'stripeDark'));
 
@@ -293,6 +340,7 @@ halfDetails.push(box(944, -46, -1644, 968, 560, -1604, 'pillar'));
 halfDetails.push(box(940, -70, -1656, 972, -46, -1592, 'glowWhite'));
 
 const brushes: Brush[] = [...half, ...half.map(mirrorBrush)];
+const prisms: PrismBrush[] = [...halfPrisms, ...halfPrisms.map(mirrorPrism)];
 const details: Brush[] = [...halfDetails, ...halfDetails.map(mirrorBrush)];
 
 // ---------------------------------------------------------------------------
@@ -455,6 +503,7 @@ export const vortexPortal: MapDef = {
   name: 'vortexportal',
   displayName: 'Vortex Portal',
   brushes,
+  prisms,
   details,
   jumpPads,
   portals,

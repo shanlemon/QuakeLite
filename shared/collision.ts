@@ -1,10 +1,11 @@
 import { type Vec3, vec3, clone } from './math';
-import type { Brush, AABB } from './mapdef';
+import type { Brush, AABB, PrismBrush } from './mapdef';
 
 // ---------------------------------------------------------------------------
-// Swept-AABB collision against the brush soup. Brushes are axis-aligned, so a
-// box sweep reduces to a ray vs. Minkowski-expanded box (slab test). This is
-// the trace primitive pmove and the rail hitscan are built on.
+// Swept-AABB collision against the brush soup. Axis-aligned brushes reduce to
+// a ray vs. a Minkowski-expanded box; convex prism brushes reduce to a ray vs.
+// expanded planes. This is the trace primitive pmove and the rail hitscan are
+// built on.
 // ---------------------------------------------------------------------------
 
 export interface TraceResult {
@@ -28,6 +29,108 @@ const CLIP_EPSILON = 0.125;
  */
 const SOLID_EPSILON = 0.03125;
 
+interface PrismHit {
+  fraction: number;
+  normal: Vec3 | null;
+  startsolid: boolean;
+  allsolid: boolean;
+}
+
+function minAabbDot(nx: number, ny: number, nz: number, mins: Vec3, maxs: Vec3): number {
+  return (
+    nx * (nx >= 0 ? mins.x : maxs.x) +
+    ny * (ny >= 0 ? mins.y : maxs.y) +
+    nz * (nz >= 0 ? mins.z : maxs.z)
+  );
+}
+
+function prismSignedArea(p: PrismBrush): number {
+  let area = 0;
+  for (let i = 0; i < p.verts.length; i++) {
+    const a = p.verts[i]!;
+    const b = p.verts[(i + 1) % p.verts.length]!;
+    area += a.x * b.z - b.x * a.z;
+  }
+  return area * 0.5;
+}
+
+function tracePrism(
+  start: Vec3,
+  dx: number,
+  dy: number,
+  dz: number,
+  mins: Vec3,
+  maxs: Vec3,
+  p: PrismBrush,
+  eps: number,
+): PrismHit | null {
+  if (p.verts.length < 3 || !(p.minY < p.maxY)) return null;
+
+  let tEnter = -Infinity;
+  let tExit = Infinity;
+  let enterNormal: Vec3 | null = null;
+
+  const testPlane = (nx: number, ny: number, nz: number, d: number): boolean => {
+    const dist = nx * start.x + ny * start.y + nz * start.z - d;
+    const denom = nx * dx + ny * dy + nz * dz;
+    if (Math.abs(denom) < 1e-9) return dist < 0;
+    const t = -dist / denom;
+    if (denom < 0) {
+      if (t > tEnter) {
+        tEnter = t;
+        enterNormal = vec3(nx, ny, nz);
+      }
+    } else if (t < tExit) {
+      tExit = t;
+    }
+    return tEnter <= tExit;
+  };
+
+  // Vertical slabs.
+  if (!testPlane(0, 1, 0, p.maxY - mins.y - eps)) return null;
+  if (!testPlane(0, -1, 0, -p.minY + maxs.y - eps)) return null;
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const v of p.verts) {
+    minX = Math.min(minX, v.x);
+    maxX = Math.max(maxX, v.x);
+    minZ = Math.min(minZ, v.z);
+    maxZ = Math.max(maxZ, v.z);
+  }
+
+  // Rectangle-extents planes are part of the exact Minkowski sum of the
+  // platform footprint and the player's horizontal box.
+  if (!testPlane(1, 0, 0, maxX - minAabbDot(1, 0, 0, mins, maxs) - eps)) return null;
+  if (!testPlane(-1, 0, 0, -minX - minAabbDot(-1, 0, 0, mins, maxs) - eps)) return null;
+  if (!testPlane(0, 0, 1, maxZ - minAabbDot(0, 0, 1, mins, maxs) - eps)) return null;
+  if (!testPlane(0, 0, -1, -minZ - minAabbDot(0, 0, -1, mins, maxs) - eps)) return null;
+
+  const ccw = prismSignedArea(p) >= 0;
+  for (let i = 0; i < p.verts.length; i++) {
+    const a = p.verts[i]!;
+    const b = p.verts[(i + 1) % p.verts.length]!;
+    const ex = b.x - a.x;
+    const ez = b.z - a.z;
+    const len = Math.hypot(ex, ez);
+    if (len < 1e-9) continue;
+    const nx = ccw ? ez / len : -ez / len;
+    const nz = ccw ? -ex / len : ex / len;
+    const d = nx * a.x + nz * a.z - minAabbDot(nx, 0, nz, mins, maxs) - eps;
+    if (!testPlane(nx, 0, nz, d)) return null;
+  }
+
+  if (tEnter > tExit) return null;
+  if (tEnter < 0) {
+    if (tExit > 0) return { fraction: 0, normal: null, startsolid: true, allsolid: tExit >= 1 };
+    return null;
+  }
+  if (tEnter <= 1) return { fraction: tEnter, normal: enterNormal, startsolid: false, allsolid: false };
+  return null;
+}
+
 /**
  * Sweep a box (mins/maxs relative to position) from start to end against all
  * brushes. Pass zero mins/maxs for a point/ray trace.
@@ -38,14 +141,14 @@ export function traceBox(
   mins: Vec3,
   maxs: Vec3,
   brushes: readonly Brush[],
+  prisms: readonly PrismBrush[] = [],
 ): TraceResult {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const dz = end.z - start.z;
 
   let bestFrac = 1;
-  let hitAxis = -1;
-  let hitSign = 0;
+  let bestNormal: Vec3 | null = null;
   let startsolid = false;
   let allsolid = false;
 
@@ -147,8 +250,25 @@ export function traceBox(
 
     if (tEnter < bestFrac && tEnter <= 1) {
       bestFrac = tEnter;
-      hitAxis = axis;
-      hitSign = sign;
+      bestNormal = vec3();
+      if (axis === 0) bestNormal.x = sign;
+      else if (axis === 1) bestNormal.y = sign;
+      else bestNormal.z = sign;
+    }
+  }
+
+  for (let i = 0; i < prisms.length; i++) {
+    const hit = tracePrism(start, dx, dy, dz, mins, maxs, prisms[i]!, eps);
+    if (!hit) continue;
+    if (hit.startsolid) {
+      startsolid = true;
+      if (hit.allsolid) allsolid = true;
+      bestFrac = 0;
+      continue;
+    }
+    if (hit.fraction < bestFrac && hit.fraction <= 1) {
+      bestFrac = hit.fraction;
+      bestNormal = hit.normal;
     }
   }
 
@@ -161,10 +281,7 @@ export function traceBox(
   } else if (bestFrac < 1) {
     // Pull back so we never end flush with (or inside) the surface.
     if (moveLen > 0) frac = Math.max(0, bestFrac - CLIP_EPSILON / moveLen);
-    normal = vec3();
-    if (hitAxis === 0) normal.x = hitSign;
-    else if (hitAxis === 1) normal.y = hitSign;
-    else normal.z = hitSign;
+    normal = bestNormal ? clone(bestNormal) : null;
   }
 
   return {
@@ -215,9 +332,10 @@ export function traceRay(
   dir: Vec3,
   maxDist: number,
   brushes: readonly Brush[],
+  prisms: readonly PrismBrush[] = [],
 ): { endpos: Vec3; fraction: number } {
   const zero = vec3(0, 0, 0);
   const end = vec3(origin.x + dir.x * maxDist, origin.y + dir.y * maxDist, origin.z + dir.z * maxDist);
-  const tr = traceBox(origin, end, zero, zero, brushes);
+  const tr = traceBox(origin, end, zero, zero, brushes, prisms);
   return { endpos: clone(tr.endpos), fraction: tr.fraction };
 }

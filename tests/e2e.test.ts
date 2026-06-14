@@ -585,7 +585,7 @@ async function main(server: ChildProcess): Promise<void> {
   const yaw = Math.atan2(-d.x, -d.z);
   const pitch = Math.asin(d.y / len);
   // Sanity-check the staging produced line of sight (test setup, not product).
-  const los = traceRay(eye, vec3(d.x / len, d.y / len, d.z / len), len, MAP.brushes);
+  const los = traceRay(eye, vec3(d.x / len, d.y / len, d.z / len), len, MAP.brushes, MAP.prisms);
   must('staging produced line of sight A → B', los.fraction > 0.99,
     `fraction=${los.fraction.toFixed(3)} A=(${pa.x.toFixed(0)},${pa.z.toFixed(0)}) B=(${pb.x.toFixed(0)},${pb.z.toFixed(0)})`);
 

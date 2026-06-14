@@ -6,7 +6,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import type { MapDef, MaterialName, Brush } from '../../../shared/mapdef';
+import type { MapDef, MaterialName, Brush, PrismBrush } from '../../../shared/mapdef';
 import type { MaterialSet } from './materials';
 
 const UV_SCALE = 1 / 128;
@@ -101,18 +101,105 @@ function brushGeometry(b: Brush): THREE.BoxGeometry {
   return geo;
 }
 
+function prismSignedArea(p: PrismBrush): number {
+  let area = 0;
+  for (let i = 0; i < p.verts.length; i++) {
+    const a = p.verts[i]!;
+    const b = p.verts[(i + 1) % p.verts.length]!;
+    area += a.x * b.z - b.x * a.z;
+  }
+  return area * 0.5;
+}
+
+function pushVertex(
+  positions: number[],
+  normals: number[],
+  uvs: number[],
+  x: number,
+  y: number,
+  z: number,
+  nx: number,
+  ny: number,
+  nz: number,
+): void {
+  positions.push(x, y, z);
+  normals.push(nx, ny, nz);
+  uvs.push(0, 0);
+}
+
+function prismGeometry(p: PrismBrush): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const verts = prismSignedArea(p) >= 0 ? p.verts : [...p.verts].reverse();
+
+  // Top face. XZ counter-clockwise winds downward in Three coordinates, so
+  // reverse each fan triangle to face +Y.
+  for (let i = 1; i < verts.length - 1; i++) {
+    const a = verts[0]!;
+    const b = verts[i]!;
+    const c = verts[i + 1]!;
+    pushVertex(positions, normals, uvs, a.x, p.maxY, a.z, 0, 1, 0);
+    pushVertex(positions, normals, uvs, c.x, p.maxY, c.z, 0, 1, 0);
+    pushVertex(positions, normals, uvs, b.x, p.maxY, b.z, 0, 1, 0);
+  }
+
+  // Bottom face.
+  for (let i = 1; i < verts.length - 1; i++) {
+    const a = verts[0]!;
+    const b = verts[i]!;
+    const c = verts[i + 1]!;
+    pushVertex(positions, normals, uvs, a.x, p.minY, a.z, 0, -1, 0);
+    pushVertex(positions, normals, uvs, b.x, p.minY, b.z, 0, -1, 0);
+    pushVertex(positions, normals, uvs, c.x, p.minY, c.z, 0, -1, 0);
+  }
+
+  // Sides.
+  for (let i = 0; i < verts.length; i++) {
+    const a = verts[i]!;
+    const b = verts[(i + 1) % verts.length]!;
+    const ex = b.x - a.x;
+    const ez = b.z - a.z;
+    const len = Math.hypot(ex, ez) || 1;
+    const nx = ez / len;
+    const nz = -ex / len;
+
+    pushVertex(positions, normals, uvs, a.x, p.maxY, a.z, nx, 0, nz);
+    pushVertex(positions, normals, uvs, b.x, p.minY, b.z, nx, 0, nz);
+    pushVertex(positions, normals, uvs, a.x, p.minY, a.z, nx, 0, nz);
+
+    pushVertex(positions, normals, uvs, a.x, p.maxY, a.z, nx, 0, nz);
+    pushVertex(positions, normals, uvs, b.x, p.maxY, b.z, nx, 0, nz);
+    pushVertex(positions, normals, uvs, b.x, p.minY, b.z, nx, 0, nz);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  worldAlignUVs(geo);
+  return geo;
+}
+
 export function buildWorld(map: MapDef, mats: MaterialSet): THREE.Group {
   const group = new THREE.Group();
   group.name = 'world';
 
-  const byMat = new Map<MaterialName, THREE.BoxGeometry[]>();
-  for (const brush of [...map.brushes, ...(map.details ?? [])]) {
-    let list = byMat.get(brush.mat);
+  const byMat = new Map<MaterialName, THREE.BufferGeometry[]>();
+  const addGeo = (mat: MaterialName, geo: THREE.BufferGeometry): void => {
+    let list = byMat.get(mat);
     if (!list) {
       list = [];
-      byMat.set(brush.mat, list);
+      byMat.set(mat, list);
     }
-    list.push(brushGeometry(brush));
+    list.push(geo);
+  };
+
+  for (const brush of [...map.brushes, ...(map.details ?? [])]) {
+    addGeo(brush.mat, brushGeometry(brush));
+  }
+  for (const prism of [...(map.prisms ?? []), ...(map.detailPrisms ?? [])]) {
+    addGeo(prism.mat, prismGeometry(prism));
   }
 
   for (const [mat, geos] of byMat) {

@@ -194,7 +194,7 @@ export function createGame(d: GameDeps): Game {
 
     // Cosmetic beam endpoint: nearer of world geometry and any remote hull.
     // The server is authoritative on the actual hit.
-    const world = traceRay(eye, dir, GAME.RAIL_RANGE, map.brushes);
+    const world = traceRay(eye, dir, GAME.RAIL_RANGE, map.brushes, map.prisms);
     let dist = world.fraction * GAME.RAIL_RANGE;
     let hitWorld = world.fraction < 1;
     for (const rv of remoteViews.values()) {

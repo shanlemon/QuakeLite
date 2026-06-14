@@ -1,9 +1,10 @@
 import type { Vec3 } from './math';
 
 // ---------------------------------------------------------------------------
-// Map data format. Maps are built from axis-aligned solid boxes ("brushes")
-// plus trigger volumes for jump pads and portals. Both the collision code
-// (shared) and the renderer (client) consume this same definition.
+// Map data format. Maps are built from axis-aligned solid boxes ("brushes"),
+// optional vertical convex prism slabs for clipped platform footprints, plus
+// trigger volumes for jump pads and portals. Both the collision code (shared)
+// and the renderer (client) consume this same definition.
 // ---------------------------------------------------------------------------
 
 /** Material names the client renderer must know how to draw. */
@@ -43,6 +44,20 @@ export interface AABB {
 
 /** Solid axis-aligned box. */
 export interface Brush extends AABB {
+  mat: MaterialName;
+}
+
+/** Horizontal footprint vertex for a vertical convex prism. */
+export interface Vec2XZ {
+  x: number;
+  z: number;
+}
+
+/** Solid vertical convex prism, authored counter-clockwise in the XZ plane. */
+export interface PrismBrush {
+  verts: Vec2XZ[];
+  minY: number;
+  maxY: number;
   mat: MaterialName;
 }
 
@@ -94,8 +109,12 @@ export interface MapDef {
   displayName: string;
   /** Solid collision/render brushes. */
   brushes: Brush[];
+  /** Solid collision/render vertical convex prisms. */
+  prisms?: PrismBrush[];
   /** Render-only detail brushes: decals, thin lips, signs, nonblocking trim. */
   details?: Brush[];
+  /** Render-only vertical convex prisms. */
+  detailPrisms?: PrismBrush[];
   jumpPads: JumpPadDef[];
   portals: PortalDef[];
   spawns: SpawnDef[];

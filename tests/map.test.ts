@@ -8,7 +8,7 @@ import { vec3, wrapAngle, yawForward, type Vec3 } from '../shared/math';
 import { traceBox } from '../shared/collision';
 import { PLAYER_MINS, PLAYER_MAXS } from '../shared/constants';
 import { pmove, createPmoveState, type UserCmd } from '../shared/movement';
-import { aabbsOverlap, type AABB, type MapDef } from '../shared/mapdef';
+import { aabbsOverlap, type AABB, type MapDef, type PrismBrush } from '../shared/mapdef';
 import { vortexPortal as m } from '../shared/maps/vortexportal';
 
 let failures = 0;
@@ -40,6 +40,7 @@ const inRegion = (p: Vec3, r: AABB): boolean =>
   p.x > r.min.x && p.x < r.max.x && p.y > r.min.y && p.y < r.max.y && p.z > r.min.z && p.z < r.max.z;
 const clusterOf = (p: Vec3): 'red' | 'blue' | 'central' | 'none' =>
   inRegion(p, RED) ? 'red' : inRegion(p, BLUE) ? 'blue' : inRegion(p, CENTRAL) ? 'central' : 'none';
+const solidPrisms = m.prisms ?? [];
 
 // ---------------------------------------------------------------------------
 console.log('map sanity');
@@ -59,6 +60,8 @@ console.log('map sanity');
       inBounds = false;
   }
   check('every brush has min < max', valid, `${m.brushes.length} brushes`);
+  const prismsValid = solidPrisms.every((p) => p.verts.length >= 3 && p.minY < p.maxY);
+  check('every prism has 3+ verts and minY < maxY', prismsValid, `${solidPrisms.length} prisms`);
   check('brush count <= 450', m.brushes.length <= 450, `${m.brushes.length}`);
   check('all brushes inside bounds', inBounds);
   check('space-floater flags set', m.space === true && m.fogDensity === 0);
@@ -88,6 +91,21 @@ console.log('180° rotational symmetry');
     ),
   );
   check('brushes mirror exactly', brushSym);
+
+  const prismKey = (p: PrismBrush): string =>
+    `${p.verts.map((v) => `${v.x.toFixed(3)},${v.z.toFixed(3)}`).join(';')}|${p.minY.toFixed(3)}|${p.maxY.toFixed(3)}|${p.mat}`;
+  const prismKeys = new Set(solidPrisms.map(prismKey));
+  const prismSym = solidPrisms.every((p) =>
+    prismKeys.has(
+      prismKey({
+        verts: p.verts.map((v) => ({ x: -v.x, z: -v.z })),
+        minY: p.minY,
+        maxY: p.maxY,
+        mat: (MAT_SWAP[p.mat] ?? p.mat) as typeof p.mat,
+      }),
+    ),
+  );
+  check('prisms mirror exactly', prismSym);
 
   const spawnKeys = new Set(m.spawns.map((s) => `${key(s.pos)}|${wrapAngle(s.yaw).toFixed(4)}`));
   const spawnSym = m.spawns.every((s) =>
@@ -133,13 +151,14 @@ console.log(`spawns (${m.spawns.length})`);
   check('at least 10 spawns', m.spawns.length >= 10, `${m.spawns.length}`);
   for (let i = 0; i < m.spawns.length; i++) {
     const s = m.spawns[i]!;
-    const solid = traceBox(s.pos, s.pos, PLAYER_MINS, PLAYER_MAXS, m.brushes).startsolid;
+    const solid = traceBox(s.pos, s.pos, PLAYER_MINS, PLAYER_MAXS, m.brushes, solidPrisms).startsolid;
     const down = traceBox(
       s.pos,
       vec3(s.pos.x, s.pos.y - 48, s.pos.z),
       PLAYER_MINS,
       PLAYER_MAXS,
       m.brushes,
+      solidPrisms,
     );
     check(`spawn ${i} not startsolid`, !solid);
     check(`spawn ${i} grounds within 33u`, down.fraction < 1 && down.fraction * 48 < 33, `drop=${(down.fraction * 48).toFixed(1)}`);
@@ -223,6 +242,7 @@ console.log('portal graph (8 portals)');
       PLAYER_MINS,
       PLAYER_MAXS,
       m.brushes,
+      solidPrisms,
     );
     check(`portal ${p.id} has a walkable approach`, down.fraction < 1);
     start.y = down.endpos.y;

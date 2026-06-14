@@ -105,8 +105,12 @@ const _wishdir = vec3();
 const _end = vec3();
 const _gnorm = vec3(0, 1, 0);
 
+function tracePlayer(start: Vec3, end: Vec3, map: MapDef): TraceResult {
+  return traceBox(start, end, PLAYER_MINS, PLAYER_MAXS, map.brushes, map.prisms);
+}
+
 function trace(state: PmoveState, end: Vec3, map: MapDef): TraceResult {
-  return traceBox(state.pos, end, PLAYER_MINS, PLAYER_MAXS, map.brushes);
+  return tracePlayer(state.pos, end, map);
 }
 
 /** PM_ClipVelocity — slide off a plane, with overbounce. */
@@ -285,7 +289,7 @@ function stepSlideMove(state: PmoveState, map: MapDef, ft: number, gravity: bool
   // Never step up when you still have up velocity and aren't on the ground.
   const down = clone(startO);
   down.y -= PHYS.STEP_SIZE;
-  const trDown = traceBox(startO, down, PLAYER_MINS, PLAYER_MAXS, map.brushes);
+  const trDown = tracePlayer(startO, down, map);
   if (state.vel.y > 0 && (trDown.fraction === 1 || (trDown.normal && trDown.normal.y < 0.7))) {
     return;
   }
@@ -294,7 +298,7 @@ function stepSlideMove(state: PmoveState, map: MapDef, ft: number, gravity: bool
   up.y += PHYS.STEP_SIZE;
 
   // Test the player position if they were a stepheight higher.
-  const trUp = traceBox(startO, up, PLAYER_MINS, PLAYER_MAXS, map.brushes);
+  const trUp = tracePlayer(startO, up, map);
   if (trUp.allsolid) return; // can't step up
 
   const stepSize = trUp.endpos.y - startO.y;
@@ -306,7 +310,7 @@ function stepSlideMove(state: PmoveState, map: MapDef, ft: number, gravity: bool
   // Push down the final amount.
   const downEnd = clone(state.pos);
   downEnd.y -= stepSize;
-  const trSettle = traceBox(state.pos, downEnd, PLAYER_MINS, PLAYER_MAXS, map.brushes);
+  const trSettle = tracePlayer(state.pos, downEnd, map);
   if (!trSettle.allsolid) copy(state.pos, trSettle.endpos);
   if (trSettle.fraction < 1 && trSettle.normal) {
     clipVelocity(state.vel, trSettle.normal, state.vel, PHYS.OVERCLIP);
