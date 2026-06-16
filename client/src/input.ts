@@ -49,34 +49,37 @@ const SENS_FACTOR = 0.0011;
 const TOUCH_LOOK_FACTOR = 0.0032;
 const STICK_RADIUS = 58;
 const STICK_DEADZONE = 0.16;
+const MAX_TOUCH_LOOK_DELTA = 80;
 
 const TOUCH_CSS = `
 .ql-touch-controls{position:absolute;inset:0;z-index:6;pointer-events:none;touch-action:none;
   -webkit-user-select:none;user-select:none;font-family:'Rajdhani','Segoe UI',Consolas,'Courier New',monospace;}
 .ql-touch-controls.hidden{display:none;}
-.ql-touch-stick{position:absolute;left:max(18px,env(safe-area-inset-left));bottom:max(24px,env(safe-area-inset-bottom));
-  width:132px;height:132px;border-radius:50%;border:1px solid rgba(150,210,235,0.55);
+.ql-touch-move{position:absolute;left:0;top:0;bottom:0;width:42%;pointer-events:auto;touch-action:none;}
+.ql-touch-stick{position:absolute;display:none;width:124px;height:124px;margin:-62px 0 0 -62px;border-radius:50%;
+  border:1px solid rgba(150,210,235,0.55);
   background:radial-gradient(circle at 50% 50%,rgba(70,230,255,0.14),rgba(5,10,20,0.34));
-  box-shadow:0 0 18px rgba(0,0,0,0.35);pointer-events:auto;touch-action:none;}
+  box-shadow:0 0 18px rgba(0,0,0,0.35);pointer-events:none;touch-action:none;}
 .ql-touch-stick-knob{position:absolute;left:50%;top:50%;width:54px;height:54px;border-radius:50%;
   transform:translate(-50%,-50%);border:1px solid rgba(220,250,255,0.75);
   background:rgba(70,230,255,0.28);box-shadow:0 0 16px rgba(70,230,255,0.22);}
 .ql-touch-look{position:absolute;right:0;top:0;width:58%;height:100%;pointer-events:auto;touch-action:none;}
-.ql-touch-actions{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:max(20px,env(safe-area-inset-bottom));
-  display:grid;grid-template-columns:76px 76px;grid-template-rows:76px 76px;gap:12px;pointer-events:none;}
-.ql-touch-btn{pointer-events:auto;touch-action:none;width:76px;height:76px;border-radius:50%;border:1px solid rgba(180,235,255,0.68);
+.ql-touch-actions{position:absolute;inset:0;pointer-events:none;}
+.ql-touch-btn{position:absolute;pointer-events:auto;touch-action:none;width:68px;height:68px;border-radius:50%;border:1px solid rgba(180,235,255,0.68);
   color:#eaffff;background:rgba(5,10,20,0.38);font:800 14px/1 'Rajdhani','Segoe UI',sans-serif;
-  letter-spacing:1px;text-shadow:0 1px 2px rgba(0,0,0,0.8);box-shadow:0 0 18px rgba(0,0,0,0.25);}
+  letter-spacing:0;text-shadow:0 1px 2px rgba(0,0,0,0.8);box-shadow:0 0 18px rgba(0,0,0,0.25);padding:0;}
 .ql-touch-btn:active,.ql-touch-btn.active{background:rgba(70,230,255,0.34);box-shadow:0 0 20px rgba(70,230,255,0.35);}
-.ql-touch-fire{grid-column:2;grid-row:1 / span 2;width:92px;height:92px;align-self:end;justify-self:end;
-  border-color:rgba(255,120,120,0.75);background:rgba(70,10,20,0.38);font-size:15px;}
-.ql-touch-jump{grid-column:1;grid-row:2;align-self:end;}
-.ql-touch-score{grid-column:1;grid-row:1;align-self:end;}
+.ql-touch-fire{right:max(22px,env(safe-area-inset-right));bottom:max(76px,calc(env(safe-area-inset-bottom) + 76px));
+  width:92px;height:92px;border-color:rgba(255,120,120,0.75);background:rgba(70,10,20,0.38);font-size:15px;}
+.ql-touch-jump{right:max(128px,calc(env(safe-area-inset-right) + 128px));bottom:max(24px,calc(env(safe-area-inset-bottom) + 24px));}
+.ql-touch-score{right:max(128px,calc(env(safe-area-inset-right) + 128px));bottom:max(128px,calc(env(safe-area-inset-bottom) + 128px));}
 @media (max-width:760px),(pointer:coarse){
-  .ql-touch-actions{grid-template-columns:66px 78px;grid-template-rows:66px 78px;gap:10px;}
-  .ql-touch-btn{width:66px;height:66px;font-size:12px;}
-  .ql-touch-fire{width:86px;height:86px;}
-  .ql-touch-stick{width:118px;height:118px;}
+  .ql-touch-stick{width:118px;height:118px;margin:-59px 0 0 -59px;}
+  .ql-touch-btn{width:62px;height:62px;font-size:12px;}
+  .ql-touch-fire{right:max(18px,env(safe-area-inset-right));bottom:max(74px,calc(env(safe-area-inset-bottom) + 74px));
+    width:86px;height:86px;}
+  .ql-touch-jump{right:max(116px,calc(env(safe-area-inset-right) + 116px));bottom:max(22px,calc(env(safe-area-inset-bottom) + 22px));}
+  .ql-touch-score{right:max(116px,calc(env(safe-area-inset-right) + 116px));bottom:max(118px,calc(env(safe-area-inset-bottom) + 118px));}
 }
 `;
 
@@ -102,13 +105,19 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   let stickEl: HTMLElement | null = null;
   let stickKnob: HTMLElement | null = null;
   let movePointer: number | null = null;
+  let stickCenterX = 0;
+  let stickCenterY = 0;
   let lookPointer: number | null = null;
   let lookLastX = 0;
   let lookLastY = 0;
+  let firePointer: number | null = null;
+  let fireLastX = 0;
+  let fireLastY = 0;
+  let fireButtonEl: HTMLButtonElement | null = null;
 
   const zeroKeys = (): void => {
     clearHeldInput(held);
-    resetStick();
+    resetTouchControls();
   };
 
   const requestLock = (): void => {
@@ -220,17 +229,42 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     e.stopPropagation();
   };
 
+  const capturePointer = (target: HTMLElement, pointerId: number): void => {
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+      /* synthetic events and some cancelled streams cannot be captured */
+    }
+  };
+
+  const clampTouchDelta = (delta: number): number => (
+    Math.max(-MAX_TOUCH_LOOK_DELTA, Math.min(MAX_TOUCH_LOOK_DELTA, delta))
+  );
+
+  const applyTouchLook = (dx: number, dy: number): void => {
+    view = applyLookDelta(view, clampTouchDelta(dx), clampTouchDelta(dy), sens, TOUCH_LOOK_FACTOR);
+  };
+
   function resetStick(): void {
     if (stickKnob) stickKnob.style.transform = 'translate(-50%,-50%)';
+    if (stickEl) stickEl.style.display = 'none';
+  }
+
+  function resetTouchControls(): void {
+    movePointer = null;
+    lookPointer = null;
+    firePointer = null;
+    resetStick();
+    fireButtonEl?.classList.remove('active');
+    touchControls?.querySelectorAll('.ql-touch-btn.active').forEach((button) => {
+      button.classList.remove('active');
+    });
   }
 
   const setStick = (clientX: number, clientY: number): void => {
     if (!stickEl || !stickKnob) return;
-    const r = stickEl.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const rawX = clientX - cx;
-    const rawY = clientY - cy;
+    const rawX = clientX - stickCenterX;
+    const rawY = clientY - stickCenterY;
     const stick = resolveTouchStick(rawX, rawY, STICK_RADIUS, STICK_DEADZONE);
     const { x, y } = stick;
     stickKnob.style.transform = `translate(calc(-50% + ${x.toFixed(1)}px), calc(-50% + ${y.toFixed(1)}px))`;
@@ -244,7 +278,15 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     if (!touchMode || !locked || movePointer !== null) return;
     stopPointer(e);
     movePointer = e.pointerId;
-    stickEl?.setPointerCapture(e.pointerId);
+    stickCenterX = e.clientX;
+    stickCenterY = e.clientY;
+    if (stickEl) {
+      const r = touchControls?.getBoundingClientRect();
+      stickEl.style.left = `${e.clientX - (r?.left ?? 0)}px`;
+      stickEl.style.top = `${e.clientY - (r?.top ?? 0)}px`;
+      stickEl.style.display = 'block';
+    }
+    capturePointer(e.currentTarget as HTMLElement, e.pointerId);
     setStick(e.clientX, e.clientY);
   };
   const onStickMove = (e: PointerEvent): void => {
@@ -269,7 +311,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     lookPointer = e.pointerId;
     lookLastX = e.clientX;
     lookLastY = e.clientY;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    capturePointer(e.currentTarget as HTMLElement, e.pointerId);
   };
   const onLookMove = (e: PointerEvent): void => {
     if (e.pointerId !== lookPointer) return;
@@ -278,7 +320,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     const dy = e.clientY - lookLastY;
     lookLastX = e.clientX;
     lookLastY = e.clientY;
-    view = applyLookDelta(view, dx, dy, sens, TOUCH_LOOK_FACTOR);
+    applyTouchLook(dx, dy);
   };
   const onLookUp = (e: PointerEvent): void => {
     if (e.pointerId !== lookPointer) return;
@@ -286,21 +328,63 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     lookPointer = null;
   };
 
+  const onFireDown = (e: PointerEvent): void => {
+    if (!touchMode || !locked || firePointer !== null) return;
+    stopPointer(e);
+    firePointer = e.pointerId;
+    fireLastX = e.clientX;
+    fireLastY = e.clientY;
+    held.fire = true;
+    fireButtonEl = e.currentTarget as HTMLButtonElement;
+    fireButtonEl.classList.add('active');
+    capturePointer(fireButtonEl, e.pointerId);
+  };
+  const onFireMove = (e: PointerEvent): void => {
+    if (e.pointerId !== firePointer) return;
+    stopPointer(e);
+    const dx = e.clientX - fireLastX;
+    const dy = e.clientY - fireLastY;
+    fireLastX = e.clientX;
+    fireLastY = e.clientY;
+    applyTouchLook(dx, dy);
+  };
+  const onFireUp = (e: PointerEvent): void => {
+    if (e.pointerId !== firePointer) return;
+    stopPointer(e);
+    releaseFire();
+  };
+
+  const releaseFire = (): void => {
+    firePointer = null;
+    held.fire = false;
+    fireButtonEl?.classList.remove('active');
+  };
+
+  const onTouchPointerEnd = (e: PointerEvent): void => {
+    if (e.pointerId === movePointer) onStickUp(e);
+    if (e.pointerId === lookPointer) onLookUp(e);
+    if (e.pointerId === firePointer) onFireUp(e);
+  };
+
   const bindTouchButton = (
     button: HTMLButtonElement,
     setDown: (down: boolean) => void,
     opts: { holdScoreboard?: boolean } = {},
   ): void => {
+    let pointerId: number | null = null;
     const down = (e: PointerEvent): void => {
-      if (!touchMode || !locked) return;
+      if (!touchMode || !locked || (pointerId !== null && button.classList.contains('active'))) return;
       stopPointer(e);
+      pointerId = e.pointerId;
       button.classList.add('active');
-      button.setPointerCapture(e.pointerId);
+      capturePointer(button, e.pointerId);
       setDown(true);
       if (opts.holdScoreboard) hooks.onScoreboard(true);
     };
     const up = (e: PointerEvent): void => {
+      if (pointerId !== null && e.pointerId !== pointerId) return;
       stopPointer(e);
+      pointerId = null;
       button.classList.remove('active');
       setDown(false);
       if (opts.holdScoreboard) hooks.onScoreboard(false);
@@ -324,12 +408,16 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     touchControls.className = 'ql-touch-controls hidden';
     touchControls.setAttribute('aria-hidden', 'true');
 
+    const moveEl = document.createElement('div');
+    moveEl.className = 'ql-touch-move';
+    touchControls.appendChild(moveEl);
+
     stickEl = document.createElement('div');
     stickEl.className = 'ql-touch-stick';
     stickKnob = document.createElement('div');
     stickKnob.className = 'ql-touch-stick-knob';
     stickEl.appendChild(stickKnob);
-    touchControls.appendChild(stickEl);
+    moveEl.appendChild(stickEl);
 
     const lookEl = document.createElement('div');
     lookEl.className = 'ql-touch-look';
@@ -353,11 +441,13 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     touchControls.appendChild(actions);
     el.appendChild(touchControls);
 
-    stickEl.addEventListener('pointerdown', onStickDown);
-    stickEl.addEventListener('pointermove', onStickMove);
-    stickEl.addEventListener('pointerup', onStickUp);
-    stickEl.addEventListener('pointercancel', onStickUp);
-    stickEl.addEventListener('lostpointercapture', onStickUp);
+    document.addEventListener('pointerup', onTouchPointerEnd);
+    document.addEventListener('pointercancel', onTouchPointerEnd);
+    moveEl.addEventListener('pointerdown', onStickDown);
+    moveEl.addEventListener('pointermove', onStickMove);
+    moveEl.addEventListener('pointerup', onStickUp);
+    moveEl.addEventListener('pointercancel', onStickUp);
+    moveEl.addEventListener('lostpointercapture', onStickUp);
     lookEl.addEventListener('pointerdown', onLookDown);
     lookEl.addEventListener('pointermove', onLookMove);
     lookEl.addEventListener('pointerup', onLookUp);
@@ -366,9 +456,11 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     bindTouchButton(jumpBtn, (down) => {
       held.jump = down;
     });
-    bindTouchButton(fireBtn, (down) => {
-      held.fire = down;
-    });
+    fireBtn.addEventListener('pointerdown', onFireDown);
+    fireBtn.addEventListener('pointermove', onFireMove);
+    fireBtn.addEventListener('pointerup', onFireUp);
+    fireBtn.addEventListener('pointercancel', onFireUp);
+    fireBtn.addEventListener('lostpointercapture', onFireUp);
     bindTouchButton(scoreBtn, () => {}, { holdScoreboard: true });
   }
 
@@ -420,6 +512,8 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
+      document.removeEventListener('pointerup', onTouchPointerEnd);
+      document.removeEventListener('pointercancel', onTouchPointerEnd);
       touchControls?.remove();
     },
   };
