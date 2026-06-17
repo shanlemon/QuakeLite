@@ -49,11 +49,13 @@ export function decodeInput(dv: DataView): UserCmd {
 
 export const SNAP_FLAG_ALIVE = 1 << 0;
 export const SNAP_FLAG_ONGROUND = 1 << 1;
+export const SNAP_FLAG_CROUCHED = 1 << 2;
 
 export interface SnapshotPlayer {
   id: number;
   alive: boolean;
   onGround: boolean;
+  crouched: boolean;
   pos: Vec3;
   vel: Vec3;
   yaw: number;
@@ -83,7 +85,12 @@ export function encodeSnapshot(snap: Snapshot): ArrayBuffer {
   let o = SNAP_HEADER_BYTES;
   for (const p of snap.players) {
     dv.setUint8(o, p.id);
-    dv.setUint8(o + 1, (p.alive ? SNAP_FLAG_ALIVE : 0) | (p.onGround ? SNAP_FLAG_ONGROUND : 0));
+    dv.setUint8(
+      o + 1,
+      (p.alive ? SNAP_FLAG_ALIVE : 0) |
+        (p.onGround ? SNAP_FLAG_ONGROUND : 0) |
+        (p.crouched ? SNAP_FLAG_CROUCHED : 0),
+    );
     dv.setFloat32(o + 2, p.pos.x, true);
     dv.setFloat32(o + 6, p.pos.y, true);
     dv.setFloat32(o + 10, p.pos.z, true);
@@ -112,6 +119,7 @@ export function decodeSnapshot(dv: DataView): Snapshot {
       id: dv.getUint8(o),
       alive: (flags & SNAP_FLAG_ALIVE) !== 0,
       onGround: (flags & SNAP_FLAG_ONGROUND) !== 0,
+      crouched: (flags & SNAP_FLAG_CROUCHED) !== 0,
       pos: vec3(dv.getFloat32(o + 2, true), dv.getFloat32(o + 6, true), dv.getFloat32(o + 10, true)),
       vel: vec3(dv.getFloat32(o + 14, true), dv.getFloat32(o + 18, true), dv.getFloat32(o + 22, true)),
       yaw: dv.getFloat32(o + 26, true),

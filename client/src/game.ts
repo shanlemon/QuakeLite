@@ -12,7 +12,7 @@ import {
   clamp,
   distanceSq,
 } from '../../shared/math';
-import { EYE_HEIGHT, GAME } from '../../shared/constants';
+import { GAME, playerEyeHeight } from '../../shared/constants';
 import {
   BUTTON_FIRE,
   createPmoveState,
@@ -79,6 +79,7 @@ interface PendingCmd {
   /** Predicted feet position after running this cmd. */
   pos: Vec3;
   teleportCount: number;
+  crouched: boolean;
 }
 
 /** Last rendered state of a remote player (also used for fire raycasts/gibs). */
@@ -87,6 +88,7 @@ interface RemoteView extends FirePreviewTarget {
   yaw: number;
   pitch: number;
   alive: boolean;
+  crouched: boolean;
   teleportCount: number;
 }
 
@@ -180,6 +182,7 @@ export function createGame(d: GameDeps): Game {
     const pitch = input.getPitch();
     const preview = computeFirePreview({
       shooterPos: local.pos,
+      shooterCrouched: local.crouched,
       yaw,
       pitch,
       map: firePreviewMap(map),
@@ -204,6 +207,7 @@ export function createGame(d: GameDeps): Game {
     local.groundNormal = s.onGround ? vec3(0, 1, 0) : null;
     local.teleportCount = s.teleportCount;
     local.padTouchId = s.padTouchId;
+    local.crouched = s.crouched;
   }
 
   function reconcile(self: SnapshotPlayer, ackSeq: number): void {
@@ -226,6 +230,7 @@ export function createGame(d: GameDeps): Game {
     if (
       acked &&
       acked.teleportCount === self.teleportCount &&
+      acked.crouched === self.crouched &&
       distanceSq(acked.pos, self.pos) <= RECONCILE_EPS_SQ
     ) {
       return; // prediction matched — keep the locally simulated state
@@ -278,6 +283,7 @@ export function createGame(d: GameDeps): Game {
         view.yaw = s.yaw;
         view.pitch = s.pitch;
         view.alive = s.alive;
+        view.crouched = s.crouched;
         view.teleportCount = s.teleportCount;
       } else {
         remoteViews.set(id, {
@@ -285,6 +291,7 @@ export function createGame(d: GameDeps): Game {
           yaw: s.yaw,
           pitch: s.pitch,
           alive: s.alive,
+          crouched: s.crouched,
           teleportCount: s.teleportCount,
         });
       }
@@ -460,7 +467,7 @@ export function createGame(d: GameDeps): Game {
     if (predicting) {
       const events = pmove(local, cmd, map);
       for (const ev of events) onLocalEvent(ev);
-      pending.push({ cmd, pos: clone(local.pos), teleportCount: local.teleportCount });
+      pending.push({ cmd, pos: clone(local.pos), teleportCount: local.teleportCount, crouched: local.crouched });
       if (pending.length > PENDING_CAP) pending.splice(0, pending.length - PENDING_CAP);
       if ((cmd.buttons & BUTTON_FIRE) !== 0) fireLocal();
     }
@@ -494,7 +501,7 @@ export function createGame(d: GameDeps): Game {
     // ---- audio listener + render ----
     const yaw = input.getYaw();
     const pitch = input.getPitch();
-    const eye = vec3(local.pos.x, local.pos.y + EYE_HEIGHT, local.pos.z);
+    const eye = vec3(local.pos.x, local.pos.y + playerEyeHeight(local.crouched), local.pos.z);
     audio.setListener(eye, yaw);
 
     const players: RenderPlayer[] = [
@@ -505,6 +512,7 @@ export function createGame(d: GameDeps): Game {
         pitch,
         colorIdx: me?.colorIdx ?? 0,
         alive: selfAlive,
+        crouched: local.crouched,
         name: me?.name ?? 'You',
         isLocal: true,
       },
@@ -518,6 +526,7 @@ export function createGame(d: GameDeps): Game {
         pitch: rv.pitch,
         colorIdx: colorOf(id),
         alive: true,
+        crouched: rv.crouched,
         name: nameOf(id),
         isLocal: false,
       });

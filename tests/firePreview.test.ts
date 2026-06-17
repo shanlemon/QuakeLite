@@ -43,6 +43,19 @@ console.log('client fire preview');
 {
   const preview = computeFirePreview({
     shooterPos: vec3(0, 0, 0),
+    shooterCrouched: true,
+    yaw: 0,
+    pitch: 0,
+    map: map(),
+    targets: [],
+    range: 100,
+  });
+  check('crouched shot starts at crouch eye height', preview.eye.y === 28, String(preview.eye.y));
+}
+
+{
+  const preview = computeFirePreview({
+    shooterPos: vec3(0, 0, 0),
     yaw: 0,
     pitch: 0,
     map: map([wall(-60, -50)]),
@@ -66,6 +79,19 @@ console.log('client fire preview');
   });
   check('live target before wall wins over world hit', preview.hitTarget === closer && preview.hitWorld === false);
   check('target hit endpoint is on target hull', preview.end.z < -23 && preview.end.z > -25, `z=${preview.end.z.toFixed(3)}`);
+}
+
+{
+  const crouched = { ...target(-40), crouched: true };
+  const preview = computeFirePreview({
+    shooterPos: vec3(0, 48, 0),
+    yaw: 0,
+    pitch: 0,
+    map: map(),
+    targets: [crouched],
+    range: 200,
+  });
+  check('crouched target uses shorter hitbox', preview.hitTarget === null);
 }
 
 {

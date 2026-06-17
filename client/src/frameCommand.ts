@@ -1,5 +1,5 @@
 import { clamp } from '../../shared/math';
-import { BUTTON_FIRE, BUTTON_JUMP, type UserCmd } from '../../shared/movement';
+import { BUTTON_CROUCH, BUTTON_FIRE, BUTTON_JUMP, type UserCmd } from '../../shared/movement';
 import type { InputSample } from './inputState';
 
 export const MAX_CMD_MSEC = 100;
@@ -17,7 +17,7 @@ export interface FrameCommandInput {
 export function buildFrameCommand(input: FrameCommandInput): UserCmd {
   let buttons = 0;
   if (input.predicting) {
-    buttons = input.sample.buttons & BUTTON_JUMP;
+    buttons = input.sample.buttons & (BUTTON_JUMP | BUTTON_CROUCH);
     if ((input.sample.buttons & BUTTON_FIRE) !== 0 && input.fireReady) buttons |= BUTTON_FIRE;
   }
 

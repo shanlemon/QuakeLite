@@ -19,6 +19,7 @@ export class LagCompHistory {
   private readonly pz = new Float64Array(CAPACITY);
   private readonly alive = new Uint8Array(CAPACITY);
   private readonly teleport = new Uint8Array(CAPACITY);
+  private readonly crouched = new Uint8Array(CAPACITY);
   /** Next slot to write. */
   private head = 0;
   private count = 0;
@@ -30,7 +31,7 @@ export class LagCompHistory {
   }
 
   /** Record one tick of state. `time` must be monotonically non-decreasing. */
-  record(time: number, pos: Vec3, alive: boolean, teleportCount = 0): void {
+  record(time: number, pos: Vec3, alive: boolean, teleportCount = 0, crouched = false): void {
     const i = this.head;
     this.times[i] = time;
     this.px[i] = pos.x;
@@ -38,6 +39,7 @@ export class LagCompHistory {
     this.pz[i] = pos.z;
     this.alive[i] = alive ? 1 : 0;
     this.teleport[i] = teleportCount & 0xff;
+    this.crouched[i] = crouched ? 1 : 0;
     this.head = (i + 1) % CAPACITY;
     if (this.count < CAPACITY) this.count++;
   }
@@ -78,6 +80,24 @@ export class LagCompHistory {
     // Older than everything we kept: clamp to the oldest sample.
     const oldest = this.idx(this.count - 1);
     return this.alive[oldest] ? this.read(oldest, out) : false;
+  }
+
+  queryCrouched(time: number): boolean {
+    if (this.count === 0) return false;
+    const newest = this.idx(0);
+    const newestTime = this.times[newest]!;
+    const t = clamp(time, newestTime - GAME.LAGCOMP_MAX_REWIND_MS, newestTime);
+
+    let after = newest;
+    for (let n = 0; n < this.count; n++) {
+      const i = this.idx(n);
+      if (this.times[i]! <= t) {
+        if (i === after || this.times[i] === t) return this.crouched[i] !== 0;
+        return this.crouched[after] !== 0;
+      }
+      after = i;
+    }
+    return this.crouched[this.idx(this.count - 1)] !== 0;
   }
 
   /** Ring index of the entry `back` steps behind the newest. */

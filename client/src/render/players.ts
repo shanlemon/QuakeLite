@@ -18,6 +18,7 @@ interface Avatar {
   group: THREE.Group;
   body: THREE.Mesh;
   head: THREE.Mesh;
+  visor: THREE.Mesh;
   gunPivot: THREE.Group;
   gunGlow: THREE.Mesh;
   plate: THREE.Sprite;
@@ -26,6 +27,7 @@ interface Avatar {
   plateTex: THREE.CanvasTexture;
   name: string;
   colorIdx: number;
+  crouched: boolean;
 }
 
 function drawNameplate(canvas: HTMLCanvasElement, name: string, colorIdx: number): void {
@@ -168,6 +170,7 @@ export class PlayerAvatars {
       group,
       body,
       head,
+      visor,
       gunPivot,
       gunGlow,
       plate,
@@ -176,6 +179,7 @@ export class PlayerAvatars {
       plateTex,
       name: '',
       colorIdx: 0,
+      crouched: false,
     };
   }
 
@@ -204,6 +208,19 @@ export class PlayerAvatars {
     }
   }
 
+  private pose(av: Avatar, crouched: boolean): void {
+    if (av.crouched === crouched) return;
+    av.crouched = crouched;
+    av.body.scale.set(1, crouched ? 0.66 : 1, 1);
+    av.body.position.y = crouched ? 14.5 : 22;
+    av.head.scale.setScalar(crouched ? 0.72 : 1);
+    av.head.position.y = crouched ? 27 : 48;
+    av.visor.scale.set(crouched ? 0.72 : 1, crouched ? 0.8 : 1, crouched ? 0.72 : 1);
+    av.visor.position.set(0, crouched ? 27.4 : 48.5, crouched ? -5.2 : -6.5);
+    av.gunPivot.position.set(9.5, crouched ? 27 : 42, -2);
+    av.plate.position.y = crouched ? 54 : 74;
+  }
+
   /** Sync avatars to this frame's player list. `cameraPos` drives plate fade. */
   update(players: RenderPlayer[], cameraPos: THREE.Vector3): void {
     this.seen.clear();
@@ -217,6 +234,7 @@ export class PlayerAvatars {
       } else {
         this.restyle(av, p);
       }
+      this.pose(av, p.crouched);
       av.group.position.set(p.pos.x, p.pos.y, p.pos.z);
       av.group.rotation.y = p.yaw;
       av.gunPivot.rotation.x = p.pitch;

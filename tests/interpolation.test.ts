@@ -30,6 +30,7 @@ function sample(t: number, x: number, teleportCount = 0): InterpSample {
     yaw: x * 0.01,
     pitch: x * 0.02,
     alive: x >= 0,
+    crouched: x > 10,
     teleportCount,
   };
 }
@@ -41,6 +42,7 @@ console.log('client interpolation');
     id: 7,
     alive: true,
     onGround: false,
+    crouched: true,
     pos: vec3(1, 2, 3),
     vel: vec3(),
     yaw: 0.5,
@@ -49,7 +51,7 @@ console.log('client interpolation');
     padTouchId: -1,
   };
   const s = sampleFromSnapshotPlayer(p, 123);
-  check('snapshot player converts to interpolation sample', s.t === 123 && s.pos === p.pos && s.yaw === 0.5 && s.teleportCount === 4);
+  check('snapshot player converts to interpolation sample', s.t === 123 && s.pos === p.pos && s.yaw === 0.5 && s.crouched && s.teleportCount === 4);
 }
 
 {
@@ -66,6 +68,7 @@ console.log('client interpolation');
   check('samples interpolate position', near(mid.pos.x, 50) && near(mid.pos.y, 25) && near(mid.pos.z, -50));
   check('samples interpolate angles', near(mid.yaw, 0.5) && near(mid.pitch, 1));
   check('sample alive state comes from newer sample', mid.alive === b.alive);
+  check('sample crouch state comes from newer sample', mid.crouched === b.crouched);
   check('render before oldest holds oldest', sampleInterpBuffer([a, b], 50) === a);
   check('render after newest holds newest', sampleInterpBuffer([a, b], 250) === b);
 }

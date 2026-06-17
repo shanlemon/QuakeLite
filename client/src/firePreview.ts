@@ -1,5 +1,5 @@
 import { rayVsAABB, traceRay } from '../../shared/collision';
-import { EYE_HEIGHT, GAME, PLAYER_MAXS, PLAYER_MINS } from '../../shared/constants';
+import { GAME, PLAYER_MINS, playerEyeHeight, playerMaxs } from '../../shared/constants';
 import { ma, vec3, viewDir, type Vec3 } from '../../shared/math';
 import type { Brush, MapDef, PrismBrush } from '../../shared/mapdef';
 
@@ -11,10 +11,12 @@ export interface FirePreviewMap {
 export interface FirePreviewTarget {
   pos: Vec3;
   alive: boolean;
+  crouched?: boolean;
 }
 
 export interface FirePreviewInput {
   shooterPos: Vec3;
+  shooterCrouched?: boolean;
   yaw: number;
   pitch: number;
   map: FirePreviewMap;
@@ -31,7 +33,7 @@ export interface FirePreview {
 
 export function computeFirePreview(input: FirePreviewInput): FirePreview {
   const range = input.range ?? GAME.RAIL_RANGE;
-  const eye = vec3(input.shooterPos.x, input.shooterPos.y + EYE_HEIGHT, input.shooterPos.z);
+  const eye = vec3(input.shooterPos.x, input.shooterPos.y + playerEyeHeight(input.shooterCrouched === true), input.shooterPos.z);
   const dir = viewDir(input.yaw, input.pitch);
   const world = traceRay(eye, dir, range, input.map.brushes, input.map.prisms);
   let dist = world.fraction * range;
@@ -40,9 +42,10 @@ export function computeFirePreview(input: FirePreviewInput): FirePreview {
 
   for (const target of input.targets) {
     if (!target.alive) continue;
+    const maxs = playerMaxs(target.crouched === true);
     const box = {
       min: vec3(target.pos.x + PLAYER_MINS.x, target.pos.y + PLAYER_MINS.y, target.pos.z + PLAYER_MINS.z),
-      max: vec3(target.pos.x + PLAYER_MAXS.x, target.pos.y + PLAYER_MAXS.y, target.pos.z + PLAYER_MAXS.z),
+      max: vec3(target.pos.x + maxs.x, target.pos.y + maxs.y, target.pos.z + maxs.z),
     };
     const t = rayVsAABB(eye, dir, box, dist);
     if (t !== null && t < dist) {

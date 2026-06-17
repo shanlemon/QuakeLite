@@ -73,6 +73,7 @@ const TOUCH_CSS = `
 .ql-touch-fire{right:max(22px,env(safe-area-inset-right));bottom:max(76px,calc(env(safe-area-inset-bottom) + 76px));
   width:92px;height:92px;border-color:rgba(255,120,120,0.75);background:rgba(70,10,20,0.38);font-size:15px;}
 .ql-touch-jump{right:max(128px,calc(env(safe-area-inset-right) + 128px));bottom:max(24px,calc(env(safe-area-inset-bottom) + 24px));}
+.ql-touch-crouch{right:max(214px,calc(env(safe-area-inset-right) + 214px));bottom:max(24px,calc(env(safe-area-inset-bottom) + 24px));}
 .ql-touch-score{right:max(128px,calc(env(safe-area-inset-right) + 128px));bottom:max(128px,calc(env(safe-area-inset-bottom) + 128px));}
 @media (max-width:760px),(pointer:coarse){
   .ql-touch-stick{width:118px;height:118px;margin:-59px 0 0 -59px;}
@@ -80,6 +81,7 @@ const TOUCH_CSS = `
   .ql-touch-fire{right:max(18px,env(safe-area-inset-right));bottom:max(74px,calc(env(safe-area-inset-bottom) + 74px));
     width:86px;height:86px;}
   .ql-touch-jump{right:max(116px,calc(env(safe-area-inset-right) + 116px));bottom:max(22px,calc(env(safe-area-inset-bottom) + 22px));}
+  .ql-touch-crouch{right:max(194px,calc(env(safe-area-inset-right) + 194px));bottom:max(22px,calc(env(safe-area-inset-bottom) + 22px));}
   .ql-touch-score{right:max(116px,calc(env(safe-area-inset-right) + 116px));bottom:max(118px,calc(env(safe-area-inset-bottom) + 118px));}
 }
 `;
@@ -210,6 +212,11 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
         break;
       case 'Space':
         held.jump = down;
+        break;
+      case 'ControlLeft':
+      case 'ControlRight':
+      case 'KeyC':
+        held.crouch = down;
         break;
       default:
         return;
@@ -436,11 +443,15 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     jumpBtn.type = 'button';
     jumpBtn.className = 'ql-touch-btn ql-touch-jump';
     jumpBtn.textContent = 'JUMP';
+    const crouchBtn = document.createElement('button');
+    crouchBtn.type = 'button';
+    crouchBtn.className = 'ql-touch-btn ql-touch-crouch';
+    crouchBtn.textContent = 'DUCK';
     const fireBtn = document.createElement('button');
     fireBtn.type = 'button';
     fireBtn.className = 'ql-touch-btn ql-touch-fire';
     fireBtn.textContent = 'FIRE';
-    actions.append(scoreBtn, jumpBtn, fireBtn);
+    actions.append(scoreBtn, crouchBtn, jumpBtn, fireBtn);
     touchControls.appendChild(actions);
     el.appendChild(touchControls);
 
@@ -458,6 +469,9 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     lookEl.addEventListener('lostpointercapture', onLookUp);
     bindTouchButton(jumpBtn, (down) => {
       held.jump = down;
+    });
+    bindTouchButton(crouchBtn, (down) => {
+      held.crouch = down;
     });
     fireBtn.addEventListener('pointerdown', onFireDown);
     fireBtn.addEventListener('pointermove', onFireMove);

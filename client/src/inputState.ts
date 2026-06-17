@@ -1,10 +1,10 @@
 import { clamp, wrapAngle, DEG2RAD } from '../../shared/math';
-import { BUTTON_FIRE, BUTTON_JUMP } from '../../shared/movement';
+import { BUTTON_CROUCH, BUTTON_FIRE, BUTTON_JUMP } from '../../shared/movement';
 
 export interface InputSample {
   fmove: number;
   smove: number;
-  /** Raw held buttons (jump|fire) - the game gates fire on its cooldown. */
+  /** Raw held buttons (jump|fire|crouch) - the game gates fire on its cooldown. */
   buttons: number;
   yaw: number;
   pitch: number;
@@ -16,6 +16,7 @@ export interface HeldInputState {
   left: boolean;
   right: boolean;
   jump: boolean;
+  crouch: boolean;
   fire: boolean;
   /** Local-only camera zoom; not encoded into network command buttons. */
   zoom: boolean;
@@ -56,6 +57,7 @@ export function createHeldInputState(): HeldInputState {
     left: false,
     right: false,
     jump: false,
+    crouch: false,
     fire: false,
     zoom: false,
   };
@@ -67,6 +69,7 @@ export function clearHeldInput(state: HeldInputState): void {
   state.left = false;
   state.right = false;
   state.jump = false;
+  state.crouch = false;
   state.fire = false;
   state.zoom = false;
 }
@@ -74,7 +77,10 @@ export function clearHeldInput(state: HeldInputState): void {
 export function buildInputSample(state: HeldInputState, view: InputView): InputSample {
   const fmove = (state.fwd ? 127 : 0) + (state.back ? -127 : 0);
   const smove = (state.right ? 127 : 0) + (state.left ? -127 : 0);
-  const buttons = (state.jump ? BUTTON_JUMP : 0) | (state.fire ? BUTTON_FIRE : 0);
+  const buttons =
+    (state.jump ? BUTTON_JUMP : 0) |
+    (state.fire ? BUTTON_FIRE : 0) |
+    (state.crouch ? BUTTON_CROUCH : 0);
   return { fmove, smove, buttons, yaw: view.yaw, pitch: view.pitch };
 }
 

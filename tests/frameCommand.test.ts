@@ -1,6 +1,6 @@
 // Client frame command helper tests - run with: npx tsx tests/frameCommand.test.ts
 
-import { BUTTON_FIRE, BUTTON_JUMP } from '../shared/movement';
+import { BUTTON_CROUCH, BUTTON_FIRE, BUTTON_JUMP } from '../shared/movement';
 import { buildFrameCommand } from '../client/src/frameCommand';
 import type { InputSample } from '../client/src/inputState';
 
@@ -16,7 +16,7 @@ function check(name: string, cond: boolean, detail = ''): void {
 const sample: InputSample = {
   fmove: 127,
   smove: -64,
-  buttons: BUTTON_JUMP | BUTTON_FIRE,
+  buttons: BUTTON_JUMP | BUTTON_CROUCH | BUTTON_FIRE,
   yaw: 1.25,
   pitch: -0.4,
 };
@@ -34,7 +34,7 @@ console.log('client frame command');
   });
   check('predicting command preserves sequence and view angles', cmd.seq === 7 && cmd.yaw === sample.yaw && cmd.pitch === sample.pitch);
   check('predicting command preserves movement', cmd.fmove === 127 && cmd.smove === -64);
-  check('predicting command allows jump and ready fire', cmd.buttons === (BUTTON_JUMP | BUTTON_FIRE), String(cmd.buttons));
+  check('predicting command allows jump, crouch, and ready fire', cmd.buttons === (BUTTON_JUMP | BUTTON_CROUCH | BUTTON_FIRE), String(cmd.buttons));
   check('command rounds msec and floors interpTime', cmd.msec === 16 && cmd.interpTime === 1234);
 }
 
@@ -47,7 +47,7 @@ console.log('client frame command');
     fireReady: false,
     renderTime: 10,
   });
-  check('fire is gated by cooldown while jump remains held', cmd.buttons === BUTTON_JUMP, String(cmd.buttons));
+  check('fire is gated by cooldown while movement buttons remain held', cmd.buttons === (BUTTON_JUMP | BUTTON_CROUCH), String(cmd.buttons));
 }
 
 {

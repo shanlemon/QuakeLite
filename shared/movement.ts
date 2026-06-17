@@ -33,11 +33,12 @@ import {
   clamp,
 } from './math';
 import { traceBox, type TraceResult } from './collision';
-import { PHYS, PLAYER_MINS, PLAYER_MAXS } from './constants';
+import { PHYS, PLAYER_MINS, PLAYER_MAXS, playerMaxs } from './constants';
 import { type MapDef, type PortalDef, aabbsOverlap, portalYawDelta } from './mapdef';
 
 export const BUTTON_JUMP = 1 << 0;
 export const BUTTON_FIRE = 1 << 1;
+export const BUTTON_CROUCH = 1 << 2;
 
 /** One client input command (what goes over the wire). */
 export interface UserCmd {
@@ -65,6 +66,8 @@ export interface PmoveState {
   teleportCount: number;
   /** Index of the jump pad currently being touched, -1 if none (edge trigger). */
   padTouchId: number;
+  /** True while using the shorter crouched player bounds. */
+  crouched: boolean;
 }
 
 export function createPmoveState(pos?: Vec3): PmoveState {
@@ -75,6 +78,7 @@ export function createPmoveState(pos?: Vec3): PmoveState {
     groundNormal: null,
     teleportCount: 0,
     padTouchId: -1,
+    crouched: false,
   };
 }
 
@@ -85,6 +89,7 @@ export function copyPmoveState(out: PmoveState, src: PmoveState): PmoveState {
   out.groundNormal = src.groundNormal ? clone(src.groundNormal) : null;
   out.teleportCount = src.teleportCount;
   out.padTouchId = src.padTouchId;
+  out.crouched = src.crouched;
   return out;
 }
 
@@ -105,12 +110,23 @@ const _wishdir = vec3();
 const _end = vec3();
 const _gnorm = vec3(0, 1, 0);
 
-function tracePlayer(start: Vec3, end: Vec3, map: MapDef): TraceResult {
-  return traceBox(start, end, PLAYER_MINS, PLAYER_MAXS, map.brushes, map.prisms);
+function tracePlayer(start: Vec3, end: Vec3, map: MapDef, crouched = false): TraceResult {
+  return traceBox(start, end, PLAYER_MINS, playerMaxs(crouched), map.brushes, map.prisms);
 }
 
 function trace(state: PmoveState, end: Vec3, map: MapDef): TraceResult {
-  return tracePlayer(state.pos, end, map);
+  return tracePlayer(state.pos, end, map, state.crouched);
+}
+
+function updateCrouchState(state: PmoveState, cmd: UserCmd, map: MapDef): void {
+  if ((cmd.buttons & BUTTON_CROUCH) !== 0) {
+    state.crouched = true;
+    return;
+  }
+  if (!state.crouched) return;
+
+  const standTrace = traceBox(state.pos, state.pos, PLAYER_MINS, PLAYER_MAXS, map.brushes, map.prisms);
+  if (!standTrace.startsolid && !standTrace.allsolid) state.crouched = false;
 }
 
 /** PM_ClipVelocity — slide off a plane, with overbounce. */
@@ -289,7 +305,7 @@ function stepSlideMove(state: PmoveState, map: MapDef, ft: number, gravity: bool
   // Never step up when you still have up velocity and aren't on the ground.
   const down = clone(startO);
   down.y -= PHYS.STEP_SIZE;
-  const trDown = tracePlayer(startO, down, map);
+  const trDown = tracePlayer(startO, down, map, state.crouched);
   if (state.vel.y > 0 && (trDown.fraction === 1 || (trDown.normal && trDown.normal.y < 0.7))) {
     return;
   }
@@ -298,7 +314,7 @@ function stepSlideMove(state: PmoveState, map: MapDef, ft: number, gravity: bool
   up.y += PHYS.STEP_SIZE;
 
   // Test the player position if they were a stepheight higher.
-  const trUp = tracePlayer(startO, up, map);
+  const trUp = tracePlayer(startO, up, map, state.crouched);
   if (trUp.allsolid) return; // can't step up
 
   const stepSize = trUp.endpos.y - startO.y;
@@ -310,7 +326,7 @@ function stepSlideMove(state: PmoveState, map: MapDef, ft: number, gravity: bool
   // Push down the final amount.
   const downEnd = clone(state.pos);
   downEnd.y -= stepSize;
-  const trSettle = tracePlayer(state.pos, downEnd, map);
+  const trSettle = tracePlayer(state.pos, downEnd, map, state.crouched);
   if (!trSettle.allsolid) copy(state.pos, trSettle.endpos);
   if (trSettle.fraction < 1 && trSettle.normal) {
     clipVelocity(state.vel, trSettle.normal, state.vel, PHYS.OVERCLIP);
@@ -426,15 +442,16 @@ function walkMove(state: PmoveState, cmd: UserCmd, map: MapDef, ft: number): voi
 
 /** Jump pads + portals. Runs after movement each chunk. */
 function touchTriggers(state: PmoveState, map: MapDef, events: PmoveEvent[]): void {
+  const maxs = playerMaxs(state.crouched);
   const pmin = vec3(
     state.pos.x + PLAYER_MINS.x,
     state.pos.y + PLAYER_MINS.y,
     state.pos.z + PLAYER_MINS.z,
   );
   const pmax = vec3(
-    state.pos.x + PLAYER_MAXS.x,
-    state.pos.y + PLAYER_MAXS.y,
-    state.pos.z + PLAYER_MAXS.z,
+    state.pos.x + maxs.x,
+    state.pos.y + maxs.y,
+    state.pos.z + maxs.z,
   );
 
   // Jump pads: touching one sets velocity outright (Q3 trigger_push style).
@@ -475,6 +492,7 @@ function pmoveSingle(state: PmoveState, cmd: UserCmd, map: MapDef, msec: number,
   const wasOnGround = state.onGround;
   const fallSpeed = -state.vel.y;
 
+  updateCrouchState(state, cmd, map);
   groundTrace(state, map);
 
   // Landing detection (for sounds/screen feedback only — no physics effect).

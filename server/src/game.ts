@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { rayVsAABB, traceRay } from '../../shared/collision';
-import { EYE_HEIGHT, GAME, PLAYER_MAXS, PLAYER_MINS } from '../../shared/constants';
+import { GAME, PLAYER_MINS, playerEyeHeight, playerMaxs } from '../../shared/constants';
 import { clamp, copy, ma, vec3, viewDir } from '../../shared/math';
 import { pointInAABB, type MapDef, type SpawnDef } from '../../shared/mapdef';
 import { createPmoveState, type PmoveState, type UserCmd } from '../../shared/movement';
@@ -97,7 +97,7 @@ export class Game {
     if (now < shooter.nextFireAt - FIRE_COOLDOWN_SLACK_MS) return;
     shooter.nextFireAt = Math.max(shooter.nextFireAt, now) + GAME.FIRE_COOLDOWN_MS;
 
-    const eye = vec3(shooter.state.pos.x, shooter.state.pos.y + EYE_HEIGHT, shooter.state.pos.z);
+    const eye = vec3(shooter.state.pos.x, shooter.state.pos.y + playerEyeHeight(shooter.state.crouched), shooter.state.pos.z);
     const dir = viewDir(cmd.yaw, cmd.pitch);
     const world = traceRay(eye, dir, GAME.RAIL_RANGE, this.map.brushes, this.map.prisms);
     const worldDist = world.fraction * GAME.RAIL_RANGE;
@@ -109,10 +109,12 @@ export class Game {
     const rewound = vec3();
     for (const q of players) {
       if (q === shooter || !q.alive) continue;
-      if (!q.history.query(rewindTime, rewound)) copy(rewound, q.state.pos);
+      const rewoundOk = q.history.query(rewindTime, rewound);
+      if (!rewoundOk) copy(rewound, q.state.pos);
+      const maxs = playerMaxs(rewoundOk ? q.history.queryCrouched(rewindTime) : q.state.crouched);
       const box = {
         min: vec3(rewound.x + PLAYER_MINS.x, rewound.y + PLAYER_MINS.y, rewound.z + PLAYER_MINS.z),
-        max: vec3(rewound.x + PLAYER_MAXS.x, rewound.y + PLAYER_MAXS.y, rewound.z + PLAYER_MAXS.z),
+        max: vec3(rewound.x + maxs.x, rewound.y + maxs.y, rewound.z + maxs.z),
       };
       const t = rayVsAABB(eye, dir, box, bestT);
       if (t !== null && t < bestT) {

@@ -8,6 +8,7 @@ import {
   createPmoveState,
   horizontalSpeed,
   BUTTON_JUMP,
+  BUTTON_CROUCH,
   type UserCmd,
   type PmoveState,
 } from '../shared/movement';
@@ -72,8 +73,8 @@ function freshState(x = 0, z = 0): PmoveState {
   return s;
 }
 
-function runFor(state: PmoveState, ms: number, make: (t: number) => UserCmd): void {
-  for (let t = 0; t < ms; t += 8) pmove(state, make(t), testMap);
+function runFor(state: PmoveState, ms: number, make: (t: number) => UserCmd, map: MapDef = testMap): void {
+  for (let t = 0; t < ms; t += 8) pmove(state, make(t), map);
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +164,24 @@ console.log('steps and walls');
   runFor(s, 1500, () => cmd({ yaw: -Math.PI / 2, fmove: 127 })); // run +x
   check('climbs a 16u step', s.pos.y > 15 && s.pos.x > 920, `x=${s.pos.x.toFixed(0)} y=${s.pos.y.toFixed(1)}`);
   check('blocked by the 80u wall', s.pos.x < 1100, `x=${s.pos.x.toFixed(0)}`);
+}
+
+// ---------------------------------------------------------------------------
+console.log('crouch');
+{
+  const lowMap: MapDef = {
+    ...testMap,
+    brushes: [...testMap.brushes, box(-64, 34, -64, 64, 96, 64)],
+  };
+  const s = freshState();
+  runFor(s, 32, () => cmd({ buttons: BUTTON_CROUCH }), lowMap);
+  check('crouch lowers the player bounds', s.crouched);
+  runFor(s, 32, () => cmd({}), lowMap);
+  check('blocked headroom keeps player crouched', s.crouched);
+
+  s.pos.x = 160;
+  runFor(s, 32, () => cmd({}), lowMap);
+  check('player stands when headroom is clear', !s.crouched);
 }
 
 // ---------------------------------------------------------------------------

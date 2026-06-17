@@ -279,7 +279,7 @@ export class Room {
     this.game.update(now, all);
 
     // Record lag-comp history after respawns so fresh spawns are queryable.
-    for (const p of all) p.history.record(now, p.state.pos, p.alive, p.state.teleportCount);
+    for (const p of all) p.history.record(now, p.state.pos, p.alive, p.state.teleportCount, p.state.crouched);
 
     if (this.tickCount % GAME.SNAPSHOT_DIVISOR === 0) this.sendSnapshots(now);
 
@@ -294,6 +294,7 @@ export class Room {
       id: p.id,
       alive: p.alive,
       onGround: p.state.onGround,
+      crouched: p.state.crouched,
       pos: p.state.pos,
       vel: p.state.vel,
       yaw: p.yaw,

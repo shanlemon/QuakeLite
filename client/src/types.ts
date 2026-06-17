@@ -28,6 +28,7 @@ export interface RenderPlayer {
   pitch: number;
   colorIdx: number;
   alive: boolean;
+  crouched: boolean;
   name: string;
   /** Local player's body is not drawn (first person), but viewmodel is. */
   isLocal: boolean;

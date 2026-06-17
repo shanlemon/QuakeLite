@@ -23,7 +23,17 @@ export const PHYS = {
 /** Player AABB: 32×32×56 units, feet at origin. */
 export const PLAYER_MINS: Vec3 = vec3(-16, 0, -16);
 export const PLAYER_MAXS: Vec3 = vec3(16, 56, 16);
+export const PLAYER_CROUCH_MAXS: Vec3 = vec3(16, 32, 16);
 export const EYE_HEIGHT = 48; // above feet
+export const CROUCH_EYE_HEIGHT = 28; // above feet
+
+export function playerMaxs(crouched: boolean): Vec3 {
+  return crouched ? PLAYER_CROUCH_MAXS : PLAYER_MAXS;
+}
+
+export function playerEyeHeight(crouched: boolean): number {
+  return crouched ? CROUCH_EYE_HEIGHT : EYE_HEIGHT;
+}
 
 // ---------------------------------------------------------------------------
 // Game rules / netcode

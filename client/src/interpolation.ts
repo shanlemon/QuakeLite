@@ -11,6 +11,7 @@ export interface InterpSample {
   yaw: number;
   pitch: number;
   alive: boolean;
+  crouched: boolean;
   teleportCount: number;
 }
 
@@ -21,6 +22,7 @@ export function sampleFromSnapshotPlayer(p: SnapshotPlayer, t: number): InterpSa
     yaw: p.yaw,
     pitch: p.pitch,
     alive: p.alive,
+    crouched: p.crouched,
     teleportCount: p.teleportCount,
   };
 }
@@ -63,6 +65,7 @@ export function sampleInterpBuffer(
     yaw: lerpAngle(a.yaw, b.yaw, t),
     pitch: lerp(a.pitch, b.pitch, t),
     alive: b.alive,
+    crouched: b.crouched,
     teleportCount: b.teleportCount,
   };
 }
