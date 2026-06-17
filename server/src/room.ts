@@ -16,6 +16,7 @@ import {
   MSG_INPUT,
   decodeInput,
   encodeSnapshot,
+  vecToArr,
   type ClientJsonMsg,
   type PlayerInfo,
   type ServerJsonMsg,
@@ -33,6 +34,7 @@ import {
 import { rawToString, sendJson, toDataView } from './wsio';
 
 const SCORES_INTERVAL_MS = 1000;
+export const DISCONNECT_GRACE_MS = 30_000;
 /** Clamp a single timer gap (debugger pause, laptop sleep) to this much sim time. */
 const MAX_FRAME_MS = 250;
 
@@ -47,6 +49,13 @@ export interface Player extends GamePlayer {
   /** False until the first cmd is processed (so a client may start at seq 0). */
   acked: boolean;
   msecBudget: number;
+  /** Set while the player is retained as AFK after a disconnect. */
+  disconnectedAt: number | null;
+  disconnectTimer: NodeJS.Timeout | null;
+}
+
+export interface RoomOptions {
+  disconnectGraceMs?: number;
 }
 
 const rooms = new Map<string, Room>();
@@ -69,8 +78,10 @@ export class Room {
   private accumulator = 0;
   private tickCount = 0;
   private lastScoresAt = performance.now();
+  private readonly disconnectGraceMs: number;
 
-  constructor(readonly instanceId: string) {
+  constructor(readonly instanceId: string, opts: RoomOptions = {}) {
+    this.disconnectGraceMs = opts.disconnectGraceMs ?? DISCONNECT_GRACE_MS;
     this.game = new Game(this.map, (msg) => this.broadcast(msg), performance.now());
     this.interval = setInterval(() => this.loop(), Math.floor(GAME.TICK_MS));
     console.log(`[room ${this.instanceId}] created`);
@@ -78,6 +89,9 @@ export class Room {
 
   /** Returns null (after sending an error + closing the socket) if the room is full. */
   addPlayer(ws: WebSocket, identity: Identity): Player | null {
+    const returning = this.findPlayerByUserId(identity.userId);
+    if (returning) return this.reconnectPlayer(returning, ws, identity);
+
     if (this.players.size >= GAME.MAX_PLAYERS_PER_ROOM) {
       sendJson(ws, { type: 'error', code: 'room_full', message: 'This match is full.' });
       ws.close(4001, 'room full');
@@ -111,17 +125,12 @@ export class Room {
       lastAckSeq: 0,
       acked: false,
       msecBudget: initialMsecBudget(),
+      disconnectedAt: null,
+      disconnectTimer: null,
     };
     this.players.set(id, player);
 
-    this.send(player, {
-      type: 'welcome',
-      id,
-      mapName: this.map.name,
-      serverTime: performance.now(),
-      match: this.game.matchInfo(),
-      players: [...this.players.values()].map(playerInfo),
-    });
+    this.sendWelcome(player);
     this.broadcastExcept(player, { type: 'playerJoin', player: playerInfo(player) });
     // Mid-match joins play instantly.
     this.game.spawnPlayer(player, [...this.players.values()]);
@@ -129,11 +138,72 @@ export class Room {
     return player;
   }
 
-  removePlayer(player: Player): void {
+  removePlayer(player: Player, opts: { socket?: WebSocket; immediate?: boolean } = {}): void {
+    if (opts.socket && player.ws !== opts.socket) return;
+    if (!this.players.has(player.id)) return;
+    if (opts.immediate) {
+      this.dropPlayer(player);
+      return;
+    }
+    if (player.disconnectedAt !== null) return;
+    player.disconnectedAt = performance.now();
+    player.ping = 999;
+    player.inputQueue.length = 0;
+    player.disconnectTimer = setTimeout(() => {
+      if (this.players.get(player.id) === player && player.disconnectedAt !== null) this.dropPlayer(player);
+    }, this.disconnectGraceMs);
+    this.broadcast({ type: 'playerUpdate', player: playerInfo(player) });
+    this.game.broadcastScores([...this.players.values()]);
+    console.log(
+      `[room ${this.instanceId}] ${player.name} disconnected; AFK grace ${Math.round(this.disconnectGraceMs / 1000)}s`,
+    );
+  }
+
+  private dropPlayer(player: Player): void {
     if (!this.players.delete(player.id)) return;
+    this.clearDisconnectTimer(player);
     this.broadcast({ type: 'playerLeave', id: player.id });
     console.log(`[room ${this.instanceId}] ${player.name} left (${this.players.size} players)`);
     if (this.players.size === 0) this.dispose();
+  }
+
+  private findPlayerByUserId(userId: string): Player | null {
+    for (const p of this.players.values()) {
+      if (p.userId === userId) return p;
+    }
+    return null;
+  }
+
+  private reconnectPlayer(player: Player, ws: WebSocket, identity: Identity): Player {
+    const oldWs = player.ws;
+    this.clearDisconnectTimer(player);
+    player.ws = ws;
+    player.disconnectedAt = null;
+    player.userId = identity.userId;
+    player.defaultName = identity.name;
+    player.name = identity.name;
+    player.avatar = identity.avatar;
+    player.ping = 0;
+    player.inputQueue.length = 0;
+    player.lastAckSeq = 0;
+    player.acked = false;
+    player.msecBudget = initialMsecBudget();
+
+    if (oldWs !== ws && oldWs.readyState === WebSocket.OPEN) oldWs.close(4000, 'reconnected');
+
+    this.sendWelcome(player);
+    if (player.alive) {
+      this.send(player, { type: 'respawn', id: player.id, pos: vecToArr(player.state.pos), yaw: player.yaw });
+    }
+    this.broadcast({ type: 'playerUpdate', player: playerInfo(player) });
+    this.game.broadcastScores([...this.players.values()]);
+    console.log(`[room ${this.instanceId}] ${player.name} rejoined as #${player.id}`);
+    return player;
+  }
+
+  private clearDisconnectTimer(player: Player): void {
+    if (player.disconnectTimer) clearTimeout(player.disconnectTimer);
+    player.disconnectTimer = null;
   }
 
   /** Route one post-join frame. Throws on malformed JSON (caller closes the socket). */
@@ -237,6 +307,17 @@ export class Room {
     sendJson(player.ws, msg);
   }
 
+  private sendWelcome(player: Player): void {
+    this.send(player, {
+      type: 'welcome',
+      id: player.id,
+      mapName: this.map.name,
+      serverTime: performance.now(),
+      match: this.game.matchInfo(),
+      players: [...this.players.values()].map(playerInfo),
+    });
+  }
+
   private broadcast(msg: ServerJsonMsg): void {
     const data = JSON.stringify(msg);
     for (const p of this.players.values()) {
@@ -270,5 +351,6 @@ function playerInfo(p: Player): PlayerInfo {
     frags: p.frags,
     deaths: p.deaths,
     ping: p.ping,
+    afk: p.disconnectedAt !== null,
   };
 }

@@ -50,10 +50,10 @@ console.log('hud presenter');
 
 {
   const rows: ScoreRow[] = [
-    { id: 1, name: 'Zed', avatarUrl: null, colorIdx: 0, frags: 4, deaths: 2, ping: 50, isLocal: false },
-    { id: 2, name: 'Ada', avatarUrl: null, colorIdx: 1, frags: 4, deaths: 1, ping: 40, isLocal: true },
-    { id: 3, name: 'Ben', avatarUrl: null, colorIdx: 2, frags: 4, deaths: 1, ping: 30, isLocal: false },
-    { id: 4, name: 'Cal', avatarUrl: null, colorIdx: 3, frags: 5, deaths: 8, ping: 20, isLocal: false },
+    { id: 1, name: 'Zed', avatarUrl: null, colorIdx: 0, frags: 4, deaths: 2, ping: 50, afk: false, isLocal: false },
+    { id: 2, name: 'Ada', avatarUrl: null, colorIdx: 1, frags: 4, deaths: 1, ping: 40, afk: false, isLocal: true },
+    { id: 3, name: 'Ben', avatarUrl: null, colorIdx: 2, frags: 4, deaths: 1, ping: 30, afk: false, isLocal: false },
+    { id: 4, name: 'Cal', avatarUrl: null, colorIdx: 3, frags: 5, deaths: 8, ping: 20, afk: false, isLocal: false },
   ];
   const sorted = sortScoreRows(rows);
   check('sortScoreRows orders by frags, deaths, then name', sorted.map((r) => r.name).join(',') === 'Cal,Ada,Ben,Zed');

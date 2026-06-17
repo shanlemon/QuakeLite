@@ -67,6 +67,7 @@ export interface ScoreRow {
   frags: number;
   deaths: number;
   ping: number;
+  afk: boolean;
   isLocal: boolean;
 }
 

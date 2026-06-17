@@ -31,6 +31,7 @@ export function buildScoreRows(players: Iterable<PlayerInfo>, localId: number): 
       frags: p.frags,
       deaths: p.deaths,
       ping: p.ping,
+      afk: p.afk,
       isLocal: p.id === localId,
     }));
 }

@@ -136,6 +136,8 @@ export interface PlayerInfo {
   frags: number;
   deaths: number;
   ping: number;
+  /** True while the player is temporarily retained after disconnect. */
+  afk: boolean;
 }
 
 export type MatchState = 'playing' | 'intermission';

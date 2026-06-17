@@ -597,9 +597,9 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
         const nameTd = el('td', 'ql-name', tr);
         nameTd.textContent = r.name;
         nameTd.style.color = colorHex(r.colorIdx);
-        for (const n of [r.frags, r.deaths, r.ping]) {
+        for (const n of [String(r.frags), String(r.deaths), r.afk ? 'AFK' : String(r.ping)]) {
           const td = el('td', 'num', tr);
-          td.textContent = String(n);
+          td.textContent = n;
         }
         frag.appendChild(tr);
       }

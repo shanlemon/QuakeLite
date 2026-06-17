@@ -10,7 +10,7 @@ type JoinMsg = Extract<ClientJsonMsg, { type: 'join' }>;
 
 export interface ConnectedRoom {
   addPlayer(ws: WebSocket, identity: Identity): Player | null;
-  removePlayer(player: Player): void;
+  removePlayer(player: Player, opts?: { socket?: WebSocket; immediate?: boolean }): void;
   handleMessage(player: Player, data: RawData, isBinary: boolean): void;
 }
 
@@ -68,7 +68,7 @@ export function createConnectionHandler(deps: ConnectionDeps = {}): (ws: WebSock
           .then((result) => {
             if (!result) return;
             if (closed) {
-              result.room.removePlayer(result.player);
+              result.room.removePlayer(result.player, { socket: ws, immediate: true });
               return;
             }
             player = result.player;
@@ -87,7 +87,7 @@ export function createConnectionHandler(deps: ConnectionDeps = {}): (ws: WebSock
     ws.on('close', () => {
       closed = true;
       clearTimeout(joinTimeout);
-      if (player && room) room.removePlayer(player);
+      if (player && room) room.removePlayer(player, { socket: ws });
       player = null;
       room = null;
     });

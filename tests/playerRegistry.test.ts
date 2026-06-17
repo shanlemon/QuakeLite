@@ -30,6 +30,7 @@ function player(overrides: Partial<PlayerInfo> = {}): PlayerInfo {
     frags: 0,
     deaths: 0,
     ping: 0,
+    afk: false,
     ...overrides,
   };
 }
