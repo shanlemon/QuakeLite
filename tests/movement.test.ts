@@ -169,6 +169,11 @@ console.log('steps and walls');
 // ---------------------------------------------------------------------------
 console.log('crouch');
 {
+  const slow = freshState();
+  runFor(slow, 2000, () => cmd({ fmove: 127, buttons: BUTTON_CROUCH }));
+  const crouchSpeed = horizontalSpeed(slow);
+  check('crouched ground speed is reduced', Math.abs(crouchSpeed - PHYS.CROUCH_SPEED) < 2, `speed=${crouchSpeed.toFixed(1)}`);
+
   const lowMap: MapDef = {
     ...testMap,
     brushes: [...testMap.brushes, box(-64, 34, -64, 64, 96, 64)],

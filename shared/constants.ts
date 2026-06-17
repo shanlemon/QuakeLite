@@ -9,6 +9,7 @@ export const PHYS = {
   GRAVITY: 800, // ups^2
   JUMP_VELOCITY: 270, // ups
   MAX_SPEED: 320, // g_speed: max ground wish speed, ups
+  CROUCH_SPEED: 160, // reduced wish speed while crouched
   STOP_SPEED: 100, // pm_stopspeed
   FRICTION: 6, // pm_friction
   ACCELERATE: 10, // pm_accelerate (ground)

@@ -150,6 +150,10 @@ function cmdScale(cmd: UserCmd, speed: number): number {
   return (speed * max) / (127 * total);
 }
 
+function moveSpeed(state: PmoveState): number {
+  return state.crouched ? PHYS.CROUCH_SPEED : PHYS.MAX_SPEED;
+}
+
 /** PM_Accelerate — the classic dot-product accelerate (strafe-jump heart). */
 function accelerate(state: PmoveState, wishdir: Vec3, wishspeed: number, accel: number, ft: number): void {
   const currentspeed = dot(state.vel, wishdir);
@@ -369,7 +373,7 @@ function groundTrace(state: PmoveState, map: MapDef): void {
 
 /** PM_AirMove. */
 function airMove(state: PmoveState, cmd: UserCmd, map: MapDef, ft: number): void {
-  const scaleFactor = cmdScale(cmd, PHYS.MAX_SPEED);
+  const scaleFactor = cmdScale(cmd, moveSpeed(state));
 
   yawForward(cmd.yaw, _fwd);
   yawRight(cmd.yaw, _right);
@@ -399,7 +403,7 @@ function airMove(state: PmoveState, cmd: UserCmd, map: MapDef, ft: number): void
 function walkMove(state: PmoveState, cmd: UserCmd, map: MapDef, ft: number): void {
   friction(state, ft);
 
-  const scaleFactor = cmdScale(cmd, PHYS.MAX_SPEED);
+  const scaleFactor = cmdScale(cmd, moveSpeed(state));
 
   yawForward(cmd.yaw, _fwd);
   yawRight(cmd.yaw, _right);
