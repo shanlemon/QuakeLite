@@ -7,7 +7,7 @@
 // long railgun launch to an isolated porch, and the chained top power-up route.
 // ---------------------------------------------------------------------------
 
-import { vec3, type Vec3 } from '../math';
+import { vec3, yawOfDir, type Vec3 } from '../math';
 import type {
   Brush,
   JumpPadDef,
@@ -80,12 +80,20 @@ function mirrorXPortal(p: PortalDef, id: number): PortalDef {
   };
 }
 
-function mirrorXSpawn(s: SpawnDef): SpawnDef {
-  return { pos: vec3(-s.pos.x, s.pos.y, s.pos.z), yaw: -s.yaw };
-}
-
 function mirrorXLight(l: LightDef): LightDef {
   return { pos: vec3(-l.pos.x, l.pos.y, l.pos.z), color: l.color, intensity: l.intensity, range: l.range };
+}
+
+const MAP_CENTER = vec3(0, 0, 0);
+
+function spawnFacingCenter(x: number, y: number, z: number): SpawnDef {
+  const pos = vec3(x, y, z);
+  const dir = vec3(MAP_CENTER.x - pos.x, 0, MAP_CENTER.z - pos.z);
+  return { pos, yaw: yawOfDir(dir) };
+}
+
+function mirrorXSpawn(s: SpawnDef): SpawnDef {
+  return spawnFacingCenter(-s.pos.x, s.pos.y, s.pos.z);
 }
 
 const brushes: Brush[] = [];
@@ -470,39 +478,39 @@ addBrush(box(-100, 790, 1660, 100, 830, 1688, 'portalFrame'));
 // ---------------------------------------------------------------------------
 
 const halfSpawns: SpawnDef[] = [
-  { pos: vec3(-360, 0.25, 250), yaw: -PI / 5 },
-  { pos: vec3(-610, 0.25, -510), yaw: PI / 4 },
-  { pos: vec3(-1030, 0.25, 430), yaw: -PI / 8 },
-  { pos: vec3(-1220, 0.25, -250), yaw: PI / 10 },
-  { pos: vec3(-1280, 0.25, -120), yaw: 0 },
-  { pos: vec3(-1220, 0.25, 250), yaw: -PI / 8 },
-  { pos: vec3(-1560, 224.25, -520), yaw: PI / 5 },
-  { pos: vec3(-1290, 224.25, -330), yaw: PI / 5 },
-  { pos: vec3(-1260, 224.25, 520), yaw: PI / 2 },
-  { pos: vec3(-1500, 224.25, 700), yaw: -PI / 4 },
-  { pos: vec3(-1270, 128.25, -1010), yaw: PI / 3 },
-  { pos: vec3(-1460, 128.25, -1280), yaw: PI / 6 },
-  { pos: vec3(-1040, 128.25, -860), yaw: (PI * 2) / 3 },
-  { pos: vec3(-1270, 128.25, 1110), yaw: -PI / 3 },
-  { pos: vec3(-1460, 128.25, 1380), yaw: -PI / 6 },
-  { pos: vec3(-1160, 128.25, 900), yaw: (-PI * 2) / 3 },
+  spawnFacingCenter(-360, 0.25, 250),
+  spawnFacingCenter(-610, 0.25, -510),
+  spawnFacingCenter(-1030, 0.25, 430),
+  spawnFacingCenter(-1220, 0.25, -250),
+  spawnFacingCenter(-1280, 0.25, -120),
+  spawnFacingCenter(-1220, 0.25, 250),
+  spawnFacingCenter(-1560, 224.25, -520),
+  spawnFacingCenter(-1290, 224.25, -330),
+  spawnFacingCenter(-1260, 224.25, 520),
+  spawnFacingCenter(-1500, 224.25, 700),
+  spawnFacingCenter(-1270, 128.25, -1010),
+  spawnFacingCenter(-1460, 128.25, -1280),
+  spawnFacingCenter(-1040, 128.25, -860),
+  spawnFacingCenter(-1270, 128.25, 1110),
+  spawnFacingCenter(-1460, 128.25, 1380),
+  spawnFacingCenter(-1160, 128.25, 900),
 ];
 const spawns: SpawnDef[] = [
   ...halfSpawns,
   ...halfSpawns.map(mirrorXSpawn),
-  { pos: vec3(-220, 56.25, -1780), yaw: 0 },
-  { pos: vec3(0, 56.25, -1690), yaw: 0 },
-  { pos: vec3(220, 56.25, -1780), yaw: 0 },
-  { pos: vec3(-420, 96.25, -2540), yaw: 0 },
-  { pos: vec3(0, 96.25, -2390), yaw: 0 },
-  { pos: vec3(420, 96.25, -2540), yaw: 0 },
-  { pos: vec3(-220, 384.25, 755), yaw: PI / 2 },
-  { pos: vec3(220, 384.25, 755), yaw: -PI / 2 },
-  { pos: vec3(-540, 448.25, 940), yaw: PI / 4 },
-  { pos: vec3(-210, 648.25, 1325), yaw: PI },
-  { pos: vec3(0, 648.25, 1435), yaw: PI },
-  { pos: vec3(210, 648.25, 1540), yaw: PI },
-  { pos: vec3(0, 228.25, 451), yaw: PI },
+  spawnFacingCenter(-220, 56.25, -1780),
+  spawnFacingCenter(0, 56.25, -1690),
+  spawnFacingCenter(220, 56.25, -1780),
+  spawnFacingCenter(-420, 96.25, -2540),
+  spawnFacingCenter(0, 96.25, -2390),
+  spawnFacingCenter(420, 96.25, -2540),
+  spawnFacingCenter(-220, 384.25, 755),
+  spawnFacingCenter(220, 384.25, 755),
+  spawnFacingCenter(-540, 448.25, 940),
+  spawnFacingCenter(-210, 648.25, 1325),
+  spawnFacingCenter(0, 648.25, 1435),
+  spawnFacingCenter(210, 648.25, 1540),
+  spawnFacingCenter(0, 228.25, 451),
 ];
 
 const halfLights: LightDef[] = [

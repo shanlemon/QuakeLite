@@ -3,7 +3,7 @@
 // spawns are grounded, jump pads route to the intended platforms, teleporters
 // exit to the armor bridge, the void kills, and fuzz movement stays sane.
 
-import { vec3, type Vec3 } from '../shared/math';
+import { vec3, yawForward, type Vec3 } from '../shared/math';
 import { traceBox } from '../shared/collision';
 import { PLAYER_MINS, PLAYER_MAXS } from '../shared/constants';
 import { createPmoveState, pmove, type UserCmd } from '../shared/movement';
@@ -124,8 +124,12 @@ console.log('spawns');
     const s = m.spawns[i]!;
     const solid = traceBox(s.pos, s.pos, PLAYER_MINS, PLAYER_MAXS, m.brushes, solidPrisms).startsolid;
     const down = traceBox(s.pos, vec3(s.pos.x, s.pos.y - 64, s.pos.z), PLAYER_MINS, PLAYER_MAXS, m.brushes, solidPrisms);
+    const forward = yawForward(s.yaw);
+    const centerLen = Math.hypot(s.pos.x, s.pos.z);
+    const centerAlignment = centerLen > 0 ? (forward.x * -s.pos.x + forward.z * -s.pos.z) / centerLen : 1;
     check(`spawn ${i} not startsolid`, !solid);
     check(`spawn ${i} grounds within 33u`, down.fraction < 1 && down.fraction * 64 < 33, `drop=${(down.fraction * 64).toFixed(1)}`);
+    check(`spawn ${i} faces map center`, centerAlignment > 0.99, `alignment=${centerAlignment.toFixed(3)}`);
   }
 }
 
