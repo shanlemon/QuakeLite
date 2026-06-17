@@ -42,6 +42,8 @@ export interface GamePlayer {
   /** Server time to respawn at, or null if no respawn is pending. */
   respawnAt: number | null;
   history: LagCompHistory;
+  /** Index of the last map spawn used, so the next spawn can avoid repeats. */
+  lastSpawnIndex?: number | null;
 }
 
 export class Game {
@@ -156,9 +158,11 @@ export class Game {
   }
 
   private spawnAt(p: GamePlayer, spawn: SpawnDef): void {
+    const spawnIndex = this.map.spawns.indexOf(spawn);
     p.state = createPmoveState(spawn.pos);
     p.alive = true;
     p.respawnAt = null;
+    p.lastSpawnIndex = spawnIndex >= 0 ? spawnIndex : null;
     p.yaw = spawn.yaw;
     p.pitch = 0;
     p.history.reset();
@@ -191,6 +195,18 @@ export class Game {
     // Everyone respawns at a distinct spawn point (round-robin if more players
     // than spawns).
     const order = shuffledIndices(this.map.spawns.length, this.random);
-    players.forEach((p, i) => this.spawnAt(p, this.map.spawns[order[i % order.length]!]!));
+    const used = new Set<number>();
+    for (let i = 0; i < players.length; i++) {
+      const p = players[i]!;
+      let spawnIndex = order[i % order.length]!;
+      for (const candidate of order) {
+        if (!used.has(candidate) && (this.map.spawns.length <= 1 || candidate !== p.lastSpawnIndex)) {
+          spawnIndex = candidate;
+          break;
+        }
+      }
+      used.add(spawnIndex);
+      this.spawnAt(p, this.map.spawns[spawnIndex]!);
+    }
   }
 }

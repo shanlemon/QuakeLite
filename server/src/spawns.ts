@@ -7,6 +7,7 @@ export type RandomFn = () => number;
 export interface SpawnSelectionPlayer {
   alive: boolean;
   state: { pos: Vec3 };
+  lastSpawnIndex?: number | null;
 }
 
 function randomIndex(length: number, random: RandomFn): number {
@@ -15,6 +16,13 @@ function randomIndex(length: number, random: RandomFn): number {
 
 const SAFE_SPAWN_DIST_FRACTION = 0.8;
 const SAFE_SPAWN_CANDIDATE_CAP = 4;
+
+function spawnPool(spawns: readonly SpawnDef[], previousIndex: number | null | undefined): { spawn: SpawnDef; index: number }[] {
+  const indexed = spawns.map((spawn, index) => ({ spawn, index }));
+  if (spawns.length <= 1 || previousIndex === null || previousIndex === undefined) return indexed;
+  const filtered = indexed.filter((s) => s.index !== previousIndex);
+  return filtered.length > 0 ? filtered : indexed;
+}
 
 /**
  * Pick a spawn far from living enemies, then randomize among the safest few.
@@ -29,12 +37,13 @@ export function selectSpawn(
 ): SpawnDef {
   if (spawns.length === 0) throw new Error('map has no spawn points');
 
+  const pool = spawnPool(spawns, forPlayer.lastSpawnIndex);
   const enemies = players.filter((q) => q !== forPlayer && q.alive);
-  if (enemies.length === 0) return spawns[randomIndex(spawns.length, random)]!;
+  if (enemies.length === 0) return pool[randomIndex(pool.length, random)]!.spawn;
 
   const scored: { spawn: SpawnDef; nearestEnemyDist: number }[] = [];
   let bestDist = 0;
-  for (const spawn of spawns) {
+  for (const { spawn } of pool) {
     let nearestEnemyDist = Infinity;
     for (const enemy of enemies) {
       nearestEnemyDist = Math.min(nearestEnemyDist, distanceSq(spawn.pos, enemy.state.pos));

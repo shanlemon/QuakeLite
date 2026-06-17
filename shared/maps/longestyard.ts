@@ -338,6 +338,9 @@ const megaPlatform = [
 ] as const;
 addDeck(megaPlatform, 320, 384);
 
+const POWER_PLATFORM_TOP_Y = 704;
+const POWER_PLATFORM_BOTTOM_Y = 640;
+
 const powerBoost = [
   [-575, 895],
   [-345, 895],
@@ -360,11 +363,11 @@ const powerPlatform = [
   [-390, 1570],
   [-390, 1330],
 ] as const;
-addDeck(powerPlatform, 584, 648);
+addDeck(powerPlatform, POWER_PLATFORM_BOTTOM_Y, POWER_PLATFORM_TOP_Y);
 
 addDetail(box(-150, 385, 660, 150, 386, 850, 'emblemBlue'));
 addDetail(box(-550, 449, 940, -370, 450, 1110, 'titleMark'));
-addDetail(box(-170, 649, 1326, 170, 650, 1560, 'emblemBlue'));
+addDetail(box(-170, POWER_PLATFORM_TOP_Y + 1, 1326, 170, POWER_PLATFORM_TOP_Y + 2, 1560, 'emblemBlue'));
 
 // ---------------------------------------------------------------------------
 // The isolated railgun porch and its return pads.
@@ -458,8 +461,8 @@ const portals: PortalDef[] = [
   mirrorXPortal(upperLeftPortal, 1),
   {
     id: 2,
-    trigger: { min: vec3(-78, 648, 1604), max: vec3(78, 816, 1674) },
-    center: vec3(0, 732, 1640),
+    trigger: { min: vec3(-78, POWER_PLATFORM_TOP_Y, 1604), max: vec3(78, POWER_PLATFORM_TOP_Y + 168, 1674) },
+    center: vec3(0, POWER_PLATFORM_TOP_Y + 84, 1640),
     radius: 60,
     faceYaw: 0,
     exitPos: vec3(0, 236.25, 451),
@@ -469,9 +472,9 @@ const portals: PortalDef[] = [
   },
 ];
 
-addBrush(box(-100, 648, 1600, -70, 824, 1688, 'portalFrame'));
-addBrush(box(70, 648, 1600, 100, 824, 1688, 'portalFrame'));
-addBrush(box(-100, 790, 1660, 100, 830, 1688, 'portalFrame'));
+addBrush(box(-100, POWER_PLATFORM_TOP_Y, 1600, -70, POWER_PLATFORM_TOP_Y + 176, 1688, 'portalFrame'));
+addBrush(box(70, POWER_PLATFORM_TOP_Y, 1600, 100, POWER_PLATFORM_TOP_Y + 176, 1688, 'portalFrame'));
+addBrush(box(-100, POWER_PLATFORM_TOP_Y + 142, 1660, 100, POWER_PLATFORM_TOP_Y + 182, 1688, 'portalFrame'));
 
 // ---------------------------------------------------------------------------
 // Spawns, lighting, and anti-grav thrusters.
@@ -507,9 +510,9 @@ const spawns: SpawnDef[] = [
   spawnFacingCenter(-220, 384.25, 755),
   spawnFacingCenter(220, 384.25, 755),
   spawnFacingCenter(-540, 448.25, 940),
-  spawnFacingCenter(-210, 648.25, 1325),
-  spawnFacingCenter(0, 648.25, 1435),
-  spawnFacingCenter(210, 648.25, 1540),
+  spawnFacingCenter(-210, POWER_PLATFORM_TOP_Y + 0.25, 1325),
+  spawnFacingCenter(0, POWER_PLATFORM_TOP_Y + 0.25, 1435),
+  spawnFacingCenter(210, POWER_PLATFORM_TOP_Y + 0.25, 1540),
   spawnFacingCenter(0, 228.25, 451),
 ];
 
@@ -526,7 +529,7 @@ const lights: LightDef[] = [
   { pos: vec3(0, 330, -40), color: 0xe8dfd2, intensity: 1.0, range: 1300 },
   { pos: vec3(0, 355, -2300), color: 0xc7dbff, intensity: 0.95, range: 1100 },
   { pos: vec3(0, 520, 760), color: 0x99d6ff, intensity: 0.9, range: 780 },
-  { pos: vec3(0, 780, 1450), color: 0x86c8ff, intensity: 1.0, range: 820 },
+  { pos: vec3(0, POWER_PLATFORM_TOP_Y + 132, 1450), color: 0x86c8ff, intensity: 1.0, range: 820 },
 ];
 
 const thrusters: Vec3[] = [
@@ -548,7 +551,7 @@ const thrusters: Vec3[] = [
   vec3(0, -18, -2350),
   vec3(0, 292, 760),
   vec3(-460, 358, 1025),
-  vec3(0, 540, 1450),
+  vec3(0, POWER_PLATFORM_TOP_Y - 108, 1450),
 ];
 
 export const longestYard: MapDef = {

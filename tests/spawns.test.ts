@@ -29,6 +29,8 @@ console.log('spawn helpers');
   const self = player(0);
   check('no-enemy spawn uses injected random', selectSpawn(spawns, self, [self], () => 0.75) === spawns[2]);
   check('random index is clamped defensively', selectSpawn(spawns, self, [self], () => 1) === spawns[2]);
+  self.lastSpawnIndex = 2;
+  check('no-enemy spawn avoids previous point', selectSpawn(spawns, self, [self], () => 1) === spawns[1]);
 }
 
 {
@@ -36,6 +38,14 @@ console.log('spawn helpers');
   const self = player(0);
   const enemies = [player(-90), player(10)];
   check('selects spawn farthest from nearest living enemy', selectSpawn(spawns, self, [self, ...enemies], () => 0) === spawns[2]);
+}
+
+{
+  const spawns = [spawn(0), spawn(100), spawn(200)];
+  const self = player(0);
+  self.lastSpawnIndex = 2;
+  const enemy = player(0);
+  check('enemy-aware spawn avoids previous point', selectSpawn(spawns, self, [self, enemy], () => 0) === spawns[1]);
 }
 
 {

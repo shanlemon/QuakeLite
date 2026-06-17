@@ -121,6 +121,7 @@ export class Room {
       nextFireAt: 0,
       respawnAt: null,
       history: new LagCompHistory(),
+      lastSpawnIndex: null,
       inputQueue: [],
       lastAckSeq: 0,
       acked: false,

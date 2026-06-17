@@ -3,7 +3,7 @@
 // spawns are grounded, jump pads route to the intended platforms, teleporters
 // exit to the armor bridge, the void kills, and fuzz movement stays sane.
 
-import { vec3, yawForward, type Vec3 } from '../shared/math';
+import { vec3, yawForward, yawOfDir, type Vec3 } from '../shared/math';
 import { traceBox } from '../shared/collision';
 import { PLAYER_MINS, PLAYER_MAXS } from '../shared/constants';
 import { createPmoveState, pmove, type UserCmd } from '../shared/movement';
@@ -82,17 +82,28 @@ function insideBounds(b: AABB, bounds: AABB): boolean {
   );
 }
 
-function settleFromPad(index: number): { pos: Vec3; onGround: boolean; teleportCount: number } {
+function settleFromPad(index: number, cmdOver: Partial<UserCmd> = {}): { pos: Vec3; onGround: boolean; teleportCount: number } {
   const pad = m.jumpPads[index]!;
   const st = createPmoveState(vec3(pad.padTop.x, pad.padTop.y + 0.25, pad.padTop.z));
   let settled = 0;
   for (let t = 0; t < 7000; t += 8) {
-    pmove(st, cmd(), m);
+    pmove(st, cmd(cmdOver), m);
     if (st.pos.y < m.bounds.min.y) break;
     settled = st.onGround && t > 500 ? settled + 1 : 0;
     if (settled > 14) break;
   }
   return { pos: st.pos, onGround: st.onGround, teleportCount: st.teleportCount };
+}
+
+function firstGroundFromPad(index: number, cmdOver: Partial<UserCmd> = {}): { pos: Vec3; onGround: boolean } {
+  const pad = m.jumpPads[index]!;
+  const st = createPmoveState(vec3(pad.padTop.x, pad.padTop.y + 0.25, pad.padTop.z));
+  for (let t = 0; t < 7000; t += 8) {
+    pmove(st, cmd(cmdOver), m);
+    if (st.pos.y < m.bounds.min.y) break;
+    if (st.onGround && t > 500) break;
+  }
+  return { pos: st.pos, onGround: st.onGround };
 }
 
 console.log('map sanity');
@@ -171,6 +182,17 @@ console.log('jump pads');
       `landed (${result.pos.x.toFixed(0)}, ${result.pos.y.toFixed(0)}, ${result.pos.z.toFixed(0)}) ${where}`,
     );
   }
+
+  const rearPowerPad = m.jumpPads[5]!;
+  const steeredPower = firstGroundFromPad(5, {
+    yaw: yawOfDir(vec3(rearPowerPad.velocity.x, 0, rearPowerPad.velocity.z)) - 0.45,
+    fmove: 127,
+  });
+  check(
+    'power chain catches modest rear steering',
+    steeredPower.onGround && regionOf(steeredPower.pos) === 'power',
+    `landed (${steeredPower.pos.x.toFixed(0)}, ${steeredPower.pos.y.toFixed(0)}, ${steeredPower.pos.z.toFixed(0)}) ${regionOf(steeredPower.pos)}`,
+  );
 }
 
 console.log('teleporters');
