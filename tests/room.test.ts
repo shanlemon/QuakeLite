@@ -1,7 +1,7 @@
 // Room lifecycle tests - run with: npx tsx tests/room.test.ts
 
 import { WebSocket } from 'ws';
-import { Room } from '../server/src/room';
+import { DISCONNECT_GRACE_MS, Room } from '../server/src/room';
 import type { Identity } from '../server/src/identity';
 import type { ServerJsonMsg } from '../shared/protocol';
 
@@ -51,6 +51,8 @@ const alice: Identity = { userId: 'discord:alice', name: 'Alice', avatar: null }
 
 console.log('room lifecycle');
 
+check('default AFK grace is longer than 30 seconds', DISCONNECT_GRACE_MS > 30_000);
+
 {
   const room = new Room('room-test-rejoin', { disconnectGraceMs: 20 });
   const ws1 = new FakeSocket();
@@ -60,6 +62,7 @@ console.log('room lifecycle');
   ws1.readyState = WebSocket.CLOSED;
   room.removePlayer(joined!, { socket: asWs(ws1) });
   check('disconnect keeps player as AFK', room.players.size === 1 && joined?.disconnectedAt !== null);
+  check('disconnect removes player from active play', joined?.alive === false && joined.respawnAt === null);
 
   const ws2 = new FakeSocket();
   const rejoined = room.addPlayer(asWs(ws2), alice);

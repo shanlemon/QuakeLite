@@ -360,6 +360,10 @@ export function createGame(d: GameDeps): Game {
         break;
       case 'playerUpdate':
         registry.set(msg.player.id, msg.player);
+        if (msg.player.afk) {
+          buffers.delete(msg.player.id);
+          remoteViews.delete(msg.player.id);
+        }
         pushScoreboard();
         break;
       case 'playerLeave': {

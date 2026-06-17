@@ -34,7 +34,7 @@ import {
 import { rawToString, sendJson, toDataView } from './wsio';
 
 const SCORES_INTERVAL_MS = 1000;
-export const DISCONNECT_GRACE_MS = 30_000;
+export const DISCONNECT_GRACE_MS = 2 * 60_000;
 /** Clamp a single timer gap (debugger pause, laptop sleep) to this much sim time. */
 const MAX_FRAME_MS = 250;
 
@@ -148,7 +148,10 @@ export class Room {
     if (player.disconnectedAt !== null) return;
     player.disconnectedAt = performance.now();
     player.ping = 999;
+    player.alive = false;
+    player.respawnAt = null;
     player.inputQueue.length = 0;
+    player.history.reset();
     player.disconnectTimer = setTimeout(() => {
       if (this.players.get(player.id) === player && player.disconnectedAt !== null) this.dropPlayer(player);
     }, this.disconnectGraceMs);
@@ -192,7 +195,9 @@ export class Room {
     if (oldWs !== ws && oldWs.readyState === WebSocket.OPEN) oldWs.close(4000, 'reconnected');
 
     this.sendWelcome(player);
-    if (player.alive) {
+    if (this.game.matchInfo().state === 'playing') {
+      this.game.spawnPlayer(player, [...this.players.values()]);
+    } else if (player.alive) {
       this.send(player, { type: 'respawn', id: player.id, pos: vecToArr(player.state.pos), yaw: player.yaw });
     }
     this.broadcast({ type: 'playerUpdate', player: playerInfo(player) });
