@@ -96,7 +96,14 @@ const PENDING_CAP = 512;
 const RECONCILE_EPS_SQ = 1;
 const FOOTSTEP_INTERVAL_MS = 340;
 const FOOTSTEP_MIN_SPEED = 150;
-const ZOOM_FOV = 45;
+const ZOOM_FOV = 60;
+const ZOOM_FOV_RESPONSE = 16;
+
+function smoothFov(current: number, target: number, dt: number): number {
+  const alpha = 1 - Math.exp(-ZOOM_FOV_RESPONSE * dt);
+  const next = current + (target - current) * alpha;
+  return Math.abs(next - target) < 0.01 ? target : next;
+}
 
 export function createGame(d: GameDeps): Game {
   const { net, input, renderer, hud, audio, discord, map } = d;
@@ -115,6 +122,7 @@ export function createGame(d: GameDeps): Game {
   let deathAt = 0;
   let lastFootstepAt = 0;
   let lastFrameAt = performance.now();
+  let renderFov = hud.getSettings().fov;
   let disconnected = false;
 
   // ---- remote players -------------------------------------------------
@@ -511,12 +519,10 @@ export function createGame(d: GameDeps): Game {
       });
     }
 
-    renderer.render(
-      dt,
-      { pos: eye, yaw, pitch, fov: input.isZooming() ? ZOOM_FOV : hud.getSettings().fov },
-      players,
-      now,
-    );
+    const baseFov = hud.getSettings().fov;
+    const targetFov = input.isZooming() ? Math.min(baseFov, ZOOM_FOV) : baseFov;
+    renderFov = smoothFov(renderFov, targetFov, dt);
+    renderer.render(dt, { pos: eye, yaw, pitch, fov: renderFov }, players, now);
   }
 
   function onDisconnect(): void {
