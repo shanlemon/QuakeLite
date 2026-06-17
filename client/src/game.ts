@@ -96,6 +96,7 @@ const PENDING_CAP = 512;
 const RECONCILE_EPS_SQ = 1;
 const FOOTSTEP_INTERVAL_MS = 340;
 const FOOTSTEP_MIN_SPEED = 150;
+const ZOOM_FOV = 45;
 
 export function createGame(d: GameDeps): Game {
   const { net, input, renderer, hud, audio, discord, map } = d;
@@ -512,7 +513,7 @@ export function createGame(d: GameDeps): Game {
 
     renderer.render(
       dt,
-      { pos: eye, yaw, pitch, fov: hud.getSettings().fov },
+      { pos: eye, yaw, pitch, fov: input.isZooming() ? ZOOM_FOV : hud.getSettings().fov },
       players,
       now,
     );

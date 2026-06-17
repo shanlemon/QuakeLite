@@ -17,6 +17,8 @@ export interface HeldInputState {
   right: boolean;
   jump: boolean;
   fire: boolean;
+  /** Local-only camera zoom; not encoded into network command buttons. */
+  zoom: boolean;
 }
 
 export interface InputView {
@@ -55,6 +57,7 @@ export function createHeldInputState(): HeldInputState {
     right: false,
     jump: false,
     fire: false,
+    zoom: false,
   };
 }
 
@@ -65,6 +68,7 @@ export function clearHeldInput(state: HeldInputState): void {
   state.right = false;
   state.jump = false;
   state.fire = false;
+  state.zoom = false;
 }
 
 export function buildInputSample(state: HeldInputState, view: InputView): InputSample {

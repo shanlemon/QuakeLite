@@ -34,6 +34,7 @@ export interface InputSys {
   setSensitivity(s: number): void;
   getYaw(): number;
   getPitch(): number;
+  isZooming(): boolean;
   isTouchMode(): boolean;
   /** Rotate the view (portal traversal reorientation). */
   addYaw(delta: number): void;
@@ -175,7 +176,9 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
 
   const onMouseButton = (e: MouseEvent, down: boolean): void => {
     if (touchMode) return;
-    if (e.button === 0 && locked) held.fire = down;
+    if (!locked) return;
+    if (e.button === 0) held.fire = down;
+    if (e.button === 2) held.zoom = down;
   };
   const onMouseDown = (e: MouseEvent): void => onMouseButton(e, true);
   const onMouseUp = (e: MouseEvent): void => onMouseButton(e, false);
@@ -487,6 +490,9 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     },
     getPitch(): number {
       return view.pitch;
+    },
+    isZooming(): boolean {
+      return held.zoom;
     },
     isTouchMode(): boolean {
       return touchMode;

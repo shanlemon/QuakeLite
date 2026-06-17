@@ -44,12 +44,16 @@ console.log('client input state');
   held.right = true;
   held.jump = true;
   held.fire = true;
+  held.zoom = true;
   const sample = buildInputSample(held, { yaw: 0, pitch: 0 });
   check('opposed movement directions cancel', sample.fmove === 0 && sample.smove === 0);
   check('jump and fire are encoded as button bits', sample.buttons === (BUTTON_JUMP | BUTTON_FIRE), String(sample.buttons));
   clearHeldInput(held);
   const cleared = buildInputSample(held, { yaw: 0, pitch: 0 });
-  check('clearHeldInput resets movement and buttons', cleared.fmove === 0 && cleared.smove === 0 && cleared.buttons === 0);
+  check(
+    'clearHeldInput resets movement, buttons, and zoom',
+    cleared.fmove === 0 && cleared.smove === 0 && cleared.buttons === 0 && !held.zoom,
+  );
 }
 
 {
