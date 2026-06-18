@@ -88,6 +88,8 @@ export interface HudStats {
   respawnInMs: number;
 }
 
+export type CrosshairStyle = 'cross' | 'dot' | 'ring';
+
 export interface Settings {
   /** Empty string means use the generated/Discord default. */
   playerName: string;
@@ -95,6 +97,11 @@ export interface Settings {
   sensitivity: number; // 0.05..20, default 2 (arbitrary scale; 2 ≈ q3 sens 2.5-ish)
   renderScale: number; // 0.5..1, default 1
   volume: number; // 0..1
+  crosshairStyle: CrosshairStyle;
+  crosshairColor: string; // #rrggbb
+  crosshairSize: number; // arm length / dot scale in px
+  crosshairGap: number; // center gap in px
+  crosshairOpacity: number; // 0.15..1
 }
 
 export interface HudCallbacks {

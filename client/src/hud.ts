@@ -8,6 +8,7 @@
 
 import type {
   CreateHud,
+  CrosshairStyle,
   Hud,
   HudCallbacks,
   HudStats,
@@ -17,7 +18,18 @@ import type {
 import { GAME, playerColor } from '../../shared/constants';
 import { MAX_PLAYER_NAME_LENGTH } from '../../shared/playerName';
 import { SENSITIVITY_MAX, SENSITIVITY_MIN } from './inputState';
-import { clampNumber, loadSettings, normalizeSettings, saveSettings } from './settings';
+import {
+  CROSSHAIR_GAP_MAX,
+  CROSSHAIR_GAP_MIN,
+  CROSSHAIR_OPACITY_MAX,
+  CROSSHAIR_OPACITY_MIN,
+  CROSSHAIR_SIZE_MAX,
+  CROSSHAIR_SIZE_MIN,
+  clampNumber,
+  loadSettings,
+  normalizeSettings,
+  saveSettings,
+} from './settings';
 import {
   cooldownFrac,
   formatClock,
@@ -48,6 +60,11 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 const FONT = `'Rajdhani','Segoe UI',Consolas,'Courier New',monospace`;
 const SENSITIVITY_STEP = 0.05;
+const CROSSHAIR_STYLE_LABELS: Record<CrosshairStyle, string> = {
+  cross: 'CROSS',
+  dot: 'DOT',
+  ring: 'RING',
+};
 
 function formatSensitivity(v: number): string {
   return v < 1 ? v.toFixed(2) : v.toFixed(1);
@@ -61,13 +78,24 @@ const CSS = `
 .ql-glow{text-shadow:0 0 8px rgba(120,220,255,0.55),0 1px 2px rgba(0,0,0,0.85);}
 
 /* ---- crosshair ---- */
-.ql-xhair{position:absolute;left:50%;top:50%;width:0;height:0;}
-.ql-xhair span{position:absolute;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,0.75);}
-.ql-xh-dot{width:3px;height:3px;left:-1.5px;top:-1.5px;border-radius:50%;}
-.ql-xh-t{width:2px;height:4px;left:-1px;top:-9px;}
-.ql-xh-b{width:2px;height:4px;left:-1px;top:5px;}
-.ql-xh-l{width:4px;height:2px;left:-9px;top:-1px;}
-.ql-xh-r{width:4px;height:2px;left:5px;top:-1px;}
+.ql-xhair{position:absolute;left:50%;top:50%;width:0;height:0;
+  --xh-color:#fff;--xh-size:4px;--xh-gap:5px;--xh-thick:2px;--xh-opacity:1;
+  --xh-dot-size:3px;--xh-dot-offset:-1.5px;--xh-thick-offset:-1px;--xh-arm-offset:-9px;
+  --xh-dot-only-size:6px;--xh-dot-only-offset:-3px;--xh-ring-size:18px;--xh-ring-offset:-9px;
+  opacity:var(--xh-opacity);}
+.ql-xhair span{position:absolute;background:var(--xh-color);box-shadow:0 0 0 1px rgba(0,0,0,0.78);}
+.ql-xh-dot{width:var(--xh-dot-size);height:var(--xh-dot-size);left:var(--xh-dot-offset);top:var(--xh-dot-offset);border-radius:50%;}
+.ql-xh-t{width:var(--xh-thick);height:var(--xh-size);left:var(--xh-thick-offset);top:var(--xh-arm-offset);}
+.ql-xh-b{width:var(--xh-thick);height:var(--xh-size);left:var(--xh-thick-offset);top:var(--xh-gap);}
+.ql-xh-l{width:var(--xh-size);height:var(--xh-thick);left:var(--xh-arm-offset);top:var(--xh-thick-offset);}
+.ql-xh-r{width:var(--xh-size);height:var(--xh-thick);left:var(--xh-gap);top:var(--xh-thick-offset);}
+.ql-xh-ring{display:none;width:var(--xh-ring-size);height:var(--xh-ring-size);left:var(--xh-ring-offset);top:var(--xh-ring-offset);
+  border:var(--xh-thick) solid var(--xh-color);border-radius:50%;background:transparent !important;}
+.ql-xhair.xh-dot .ql-xh-t,.ql-xhair.xh-dot .ql-xh-b,.ql-xhair.xh-dot .ql-xh-l,.ql-xhair.xh-dot .ql-xh-r,.ql-xhair.xh-dot .ql-xh-ring{display:none;}
+.ql-xhair.xh-dot .ql-xh-dot{display:block;width:var(--xh-dot-only-size);height:var(--xh-dot-only-size);
+  left:var(--xh-dot-only-offset);top:var(--xh-dot-only-offset);}
+.ql-xhair.xh-ring .ql-xh-dot,.ql-xhair.xh-ring .ql-xh-t,.ql-xhair.xh-ring .ql-xh-b,.ql-xhair.xh-ring .ql-xh-l,.ql-xhair.xh-ring .ql-xh-r{display:none;}
+.ql-xhair.xh-ring .ql-xh-ring{display:block;}
 
 /* ---- top bar ---- */
 .ql-clock{position:absolute;top:14px;left:50%;transform:translateX(-50%);
@@ -168,10 +196,14 @@ const CSS = `
 .ql-set-row{display:grid;grid-template-columns:106px 1fr 58px;gap:10px;align-items:center;
   margin:10px 0;font-size:14px;letter-spacing:1px;color:#cfe3f0;text-align:left;}
 .ql-set-row input[type=range]{width:100%;accent-color:#46e6ff;cursor:pointer;background:transparent;}
-.ql-set-row input[type=text]{width:100%;min-width:0;padding:7px 8px;
+.ql-set-row input[type=text],.ql-set-row select{width:100%;min-width:0;padding:7px 8px;
   color:#eaffff;background:rgba(2,6,14,0.72);border:1px solid rgba(150,175,205,0.42);
   font:700 14px/1 ${FONT};letter-spacing:1px;outline:none;}
-.ql-set-row input[type=text]:focus{border-color:#46e6ff;box-shadow:0 0 10px rgba(70,230,255,0.22);}
+.ql-set-row input[type=text]:focus,.ql-set-row select:focus{border-color:#46e6ff;box-shadow:0 0 10px rgba(70,230,255,0.22);}
+.ql-set-row select{appearance:auto;cursor:pointer;}
+.ql-set-row input[type=color]{width:100%;height:32px;min-width:0;padding:2px;cursor:pointer;
+  background:rgba(2,6,14,0.72);border:1px solid rgba(150,175,205,0.42);}
+.ql-set-row input[type=color]:focus{border-color:#46e6ff;box-shadow:0 0 10px rgba(70,230,255,0.22);outline:none;}
 .ql-set-val{text-align:right;color:#46e6ff;font-weight:700;font-variant-numeric:tabular-nums;}
 .ql-legend{margin-top:18px;font-size:13px;color:#9fb6c8;letter-spacing:1px;line-height:1.7;}
 .ql-tip{margin-top:10px;font-size:12px;color:#6f8ba0;font-style:italic;line-height:1.5;}
@@ -258,9 +290,10 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
 
   // --- crosshair -----------------------------------------------------------
   const xhair = el('div', 'ql-xhair', root);
-  for (const c of ['ql-xh-dot', 'ql-xh-t', 'ql-xh-b', 'ql-xh-l', 'ql-xh-r']) {
+  for (const c of ['ql-xh-dot', 'ql-xh-t', 'ql-xh-b', 'ql-xh-l', 'ql-xh-r', 'ql-xh-ring']) {
     el('span', c, xhair);
   }
+  applyCrosshairSettings();
 
   // --- top: clock / frags / kill feed -------------------------------------
   const clockEl = el('div', 'ql-clock ql-glow', root);
@@ -338,7 +371,32 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
   function applySettings(): void {
     settings = normalizeSettings(settings);
     saveSettings(settings);
+    applyCrosshairSettings();
     cb.onSettingsChange({ ...settings });
+  }
+
+  function applyCrosshairSettings(): void {
+    const thick = Math.max(2, Math.round(settings.crosshairSize * 0.25));
+    const dotSize = thick + 1;
+    const dotOnlySize = settings.crosshairSize + thick;
+    const armOffset = -(settings.crosshairGap + settings.crosshairSize);
+    const ringSize = (settings.crosshairGap + settings.crosshairSize) * 2;
+
+    xhair.classList.remove('xh-cross', 'xh-dot', 'xh-ring');
+    xhair.classList.add(`xh-${settings.crosshairStyle}`);
+    xhair.style.setProperty('--xh-color', settings.crosshairColor);
+    xhair.style.setProperty('--xh-size', `${settings.crosshairSize}px`);
+    xhair.style.setProperty('--xh-gap', `${settings.crosshairGap}px`);
+    xhair.style.setProperty('--xh-thick', `${thick}px`);
+    xhair.style.setProperty('--xh-opacity', String(settings.crosshairOpacity));
+    xhair.style.setProperty('--xh-dot-size', `${dotSize}px`);
+    xhair.style.setProperty('--xh-dot-offset', `${-dotSize / 2}px`);
+    xhair.style.setProperty('--xh-dot-only-size', `${dotOnlySize}px`);
+    xhair.style.setProperty('--xh-dot-only-offset', `${-dotOnlySize / 2}px`);
+    xhair.style.setProperty('--xh-thick-offset', `${-thick / 2}px`);
+    xhair.style.setProperty('--xh-arm-offset', `${armOffset}px`);
+    xhair.style.setProperty('--xh-ring-size', `${ringSize}px`);
+    xhair.style.setProperty('--xh-ring-offset', `${-ringSize / 2}px`);
   }
 
   function sliderRow(
@@ -389,6 +447,44 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
     });
   }
 
+  function crosshairStyleRow(): void {
+    const row = el('div', 'ql-set-row', pausePanel);
+    const lab = el('span', undefined, row);
+    lab.textContent = 'XHAIR';
+    const select = el('select', undefined, row);
+    for (const style of ['cross', 'dot', 'ring'] as const) {
+      const opt = el('option', undefined, select);
+      opt.value = style;
+      opt.textContent = CROSSHAIR_STYLE_LABELS[style];
+    }
+    select.value = settings.crosshairStyle;
+    const valEl = el('span', 'ql-set-val', row);
+    valEl.textContent = CROSSHAIR_STYLE_LABELS[settings.crosshairStyle];
+    select.addEventListener('change', () => {
+      settings = { ...settings, crosshairStyle: select.value as CrosshairStyle };
+      applySettings();
+      select.value = settings.crosshairStyle;
+      valEl.textContent = CROSSHAIR_STYLE_LABELS[settings.crosshairStyle];
+    });
+  }
+
+  function crosshairColorRow(): void {
+    const row = el('div', 'ql-set-row', pausePanel);
+    const lab = el('span', undefined, row);
+    lab.textContent = 'COLOR';
+    const input = el('input', undefined, row);
+    input.type = 'color';
+    input.value = settings.crosshairColor;
+    const valEl = el('span', 'ql-set-val', row);
+    valEl.textContent = settings.crosshairColor.toUpperCase();
+    input.addEventListener('input', () => {
+      settings = { ...settings, crosshairColor: input.value };
+      applySettings();
+      input.value = settings.crosshairColor;
+      valEl.textContent = settings.crosshairColor.toUpperCase();
+    });
+  }
+
   function saveAndGetSettings(): Settings {
     settings = normalizeSettings(settings);
     saveSettings(settings);
@@ -412,6 +508,28 @@ export const createHud: CreateHud = (root: HTMLElement, cb: HudCallbacks): Hud =
     settings = { ...settings, volume: clampNumber(v / 100, 0, 1) };
     applySettings();
   });
+  crosshairStyleRow();
+  crosshairColorRow();
+  sliderRow('SIZE', CROSSHAIR_SIZE_MIN, CROSSHAIR_SIZE_MAX, 1, settings.crosshairSize, (v) => String(Math.round(v)), (v) => {
+    settings = { ...settings, crosshairSize: clampNumber(Math.round(v), CROSSHAIR_SIZE_MIN, CROSSHAIR_SIZE_MAX) };
+    applySettings();
+  });
+  sliderRow('GAP', CROSSHAIR_GAP_MIN, CROSSHAIR_GAP_MAX, 1, settings.crosshairGap, (v) => String(Math.round(v)), (v) => {
+    settings = { ...settings, crosshairGap: clampNumber(Math.round(v), CROSSHAIR_GAP_MIN, CROSSHAIR_GAP_MAX) };
+    applySettings();
+  });
+  sliderRow(
+    'OPACITY',
+    Math.round(CROSSHAIR_OPACITY_MIN * 100),
+    Math.round(CROSSHAIR_OPACITY_MAX * 100),
+    5,
+    Math.round(settings.crosshairOpacity * 100),
+    (v) => `${Math.round(v)}%`,
+    (v) => {
+      settings = { ...settings, crosshairOpacity: clampNumber(v / 100, CROSSHAIR_OPACITY_MIN, CROSSHAIR_OPACITY_MAX) };
+      applySettings();
+    },
+  );
 
   const legendEl = el('div', 'ql-legend', pausePanel);
   legendEl.textContent =

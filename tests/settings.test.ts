@@ -35,35 +35,156 @@ console.log('client settings');
 
 {
   check('normalizeSettings returns defaults for empty input', JSON.stringify(normalizeSettings(null)) === JSON.stringify(DEFAULT_SETTINGS));
-  const s = normalizeSettings({ playerName: 'Ranger', fov: 100, sensitivity: 3.5, renderScale: 0.75, volume: 0.25 });
-  check('normalizeSettings preserves valid values', s.playerName === 'Ranger' && s.fov === 100 && s.sensitivity === 3.5 && s.renderScale === 0.75 && s.volume === 0.25);
+  const s = normalizeSettings({
+    playerName: 'Ranger',
+    fov: 100,
+    sensitivity: 3.5,
+    renderScale: 0.75,
+    volume: 0.25,
+    crosshairStyle: 'ring',
+    crosshairColor: '#ff00aa',
+    crosshairSize: 12,
+    crosshairGap: 7,
+    crosshairOpacity: 0.45,
+  });
+  check(
+    'normalizeSettings preserves valid values',
+    s.playerName === 'Ranger' &&
+      s.fov === 100 &&
+      s.sensitivity === 3.5 &&
+      s.renderScale === 0.75 &&
+      s.volume === 0.25 &&
+      s.crosshairStyle === 'ring' &&
+      s.crosshairColor === '#ff00aa' &&
+      s.crosshairSize === 12 &&
+      s.crosshairGap === 7 &&
+      s.crosshairOpacity === 0.45,
+  );
 }
 
 {
-  const s = normalizeSettings({ playerName: '  Alice\t\nPlayer  ', fov: 1000, sensitivity: -10, renderScale: 2, volume: 4 });
-  check('normalizeSettings clamps out-of-range values', s.fov === 130 && s.sensitivity === 0.05 && s.renderScale === 1 && s.volume === 1);
+  const s = normalizeSettings({
+    playerName: '  Alice\t\nPlayer  ',
+    fov: 1000,
+    sensitivity: -10,
+    renderScale: 2,
+    volume: 4,
+    crosshairStyle: 'triangle',
+    crosshairColor: 'red',
+    crosshairSize: 100,
+    crosshairGap: -4,
+    crosshairOpacity: 4,
+  } as any);
+  check(
+    'normalizeSettings clamps out-of-range values',
+    s.fov === 130 &&
+      s.sensitivity === 0.05 &&
+      s.renderScale === 1 &&
+      s.volume === 1 &&
+      s.crosshairStyle === 'cross' &&
+      s.crosshairColor === '#ffffff' &&
+      s.crosshairSize === 24 &&
+      s.crosshairGap === 0 &&
+      s.crosshairOpacity === 1,
+  );
   check('normalizeSettings sanitizes player names', s.playerName === 'Alice Player', s.playerName);
 }
 
 {
-  const s = parseSettings(JSON.stringify({ playerName: '\x00\x1f', fov: Number.NaN, sensitivity: 'fast', renderScale: 'low', volume: null }));
+  const s = parseSettings(
+    JSON.stringify({
+      playerName: '\x00\x1f',
+      fov: Number.NaN,
+      sensitivity: 'fast',
+      renderScale: 'low',
+      volume: null,
+      crosshairStyle: 1,
+      crosshairColor: '#xyzxyz',
+      crosshairSize: 'large',
+      crosshairGap: false,
+      crosshairOpacity: 'solid',
+    }),
+  );
   check('parseSettings falls back for non-finite or wrong-typed fields', JSON.stringify(s) === JSON.stringify(DEFAULT_SETTINGS));
   check('parseSettings returns defaults for malformed JSON', JSON.stringify(parseSettings('{bad')) === JSON.stringify(DEFAULT_SETTINGS));
 }
 
 {
   const storage = new MemoryStorage();
-  storage.setItem(SETTINGS_KEY, JSON.stringify({ playerName: 'Violet', fov: 90, sensitivity: 20, renderScale: 0.5, volume: 0 }));
+  storage.setItem(
+    SETTINGS_KEY,
+    JSON.stringify({
+      playerName: 'Violet',
+      fov: 90,
+      sensitivity: 20,
+      renderScale: 0.5,
+      volume: 0,
+      crosshairStyle: 'dot',
+      crosshairColor: '#00ff11',
+      crosshairSize: 2,
+      crosshairGap: 18,
+      crosshairOpacity: 0.15,
+    }),
+  );
   const s = loadSettings(storage);
-  check('loadSettings reads from injected storage', s.playerName === 'Violet' && s.fov === 90 && s.sensitivity === 20 && s.renderScale === 0.5 && s.volume === 0);
+  check(
+    'loadSettings reads from injected storage',
+    s.playerName === 'Violet' &&
+      s.fov === 90 &&
+      s.sensitivity === 20 &&
+      s.renderScale === 0.5 &&
+      s.volume === 0 &&
+      s.crosshairStyle === 'dot' &&
+      s.crosshairColor === '#00ff11' &&
+      s.crosshairSize === 2 &&
+      s.crosshairGap === 18 &&
+      s.crosshairOpacity === 0.15,
+  );
   check('loadSettings returns defaults without storage', JSON.stringify(loadSettings(null)) === JSON.stringify(DEFAULT_SETTINGS));
 }
 
 {
   const storage = new MemoryStorage();
-  saveSettings({ playerName: '0123456789 0123456789 0123456789', fov: 140, sensitivity: 0, renderScale: 0.1, volume: -1 }, storage);
-  const saved = JSON.parse(storage.getItem(SETTINGS_KEY) ?? '{}') as { playerName?: string; fov?: number; sensitivity?: number; renderScale?: number; volume?: number };
-  check('saveSettings stores normalized settings', saved.playerName?.length === 24 && saved.fov === 130 && saved.sensitivity === 0.05 && saved.renderScale === 0.5 && saved.volume === 0);
+  saveSettings(
+    {
+      playerName: '0123456789 0123456789 0123456789',
+      fov: 140,
+      sensitivity: 0,
+      renderScale: 0.1,
+      volume: -1,
+      crosshairStyle: 'circle',
+      crosshairColor: 'yellow',
+      crosshairSize: 100,
+      crosshairGap: -1,
+      crosshairOpacity: -1,
+    } as any,
+    storage,
+  );
+  const saved = JSON.parse(storage.getItem(SETTINGS_KEY) ?? '{}') as {
+    playerName?: string;
+    fov?: number;
+    sensitivity?: number;
+    renderScale?: number;
+    volume?: number;
+    crosshairStyle?: string;
+    crosshairColor?: string;
+    crosshairSize?: number;
+    crosshairGap?: number;
+    crosshairOpacity?: number;
+  };
+  check(
+    'saveSettings stores normalized settings',
+    saved.playerName?.length === 24 &&
+      saved.fov === 130 &&
+      saved.sensitivity === 0.05 &&
+      saved.renderScale === 0.5 &&
+      saved.volume === 0 &&
+      saved.crosshairStyle === 'cross' &&
+      saved.crosshairColor === '#ffffff' &&
+      saved.crosshairSize === 24 &&
+      saved.crosshairGap === 0 &&
+      saved.crosshairOpacity === 0.15,
+  );
 }
 
 {
