@@ -33,6 +33,24 @@ function noiseSrc(c: AudioContext, buf: AudioBuffer): AudioBufferSourceNode {
   return s;
 }
 
+function tone(
+  c: AudioContext,
+  out: AudioNode,
+  t0: number,
+  freq: number,
+  type: OscillatorType,
+  peak: number,
+  dur: number,
+  attack = 0.006,
+): void {
+  const o = c.createOscillator();
+  o.type = type;
+  o.frequency.value = freq;
+  o.connect(envGain(c, t0, peak, dur, attack)).connect(out);
+  o.start(t0);
+  o.stop(t0 + dur + 0.01);
+}
+
 // Each builder wires its nodes into env.out and returns its duration (sec).
 const SOUNDS: Record<SoundName, (env: SoundEnv) => number> = {
   // Signature railgun ZAP: noise crack + falling saw sweep + low thump.
@@ -79,6 +97,48 @@ const SOUNDS: Record<SoundName, (env: SoundEnv) => number> = {
     o.start(t0);
     o.stop(t0 + 0.16);
     return 0.15;
+  },
+
+  // Double-frag cue: tight, bright, and short enough to stack after the ding.
+  streak2({ c, out, t0 }) {
+    tone(c, out, t0, 659.25, 'square', 0.2, 0.12);
+    tone(c, out, t0 + 0.065, 987.77, 'square', 0.22, 0.14);
+    tone(c, out, t0 + 0.135, 1318.51, 'triangle', 0.18, 0.18);
+    return 0.33;
+  },
+
+  // Mid-streak cue: minor rising alarm over a low pulse.
+  streak3({ c, out, t0 }) {
+    tone(c, out, t0, 110, 'sawtooth', 0.18, 0.32, 0.012);
+    for (let i = 0; i < 4; i++) {
+      tone(c, out, t0 + i * 0.07, 740 + i * 90, 'square', 0.12, 0.1, 0.004);
+    }
+    return 0.38;
+  },
+
+  // Big streak cue: low horn, rail-like crackle, and a high victory shimmer.
+  streak5({ c, out, t0, noise }) {
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(520, t0);
+    lp.frequency.exponentialRampToValueAtTime(1200, t0 + 0.45);
+    lp.connect(out);
+    for (const f of [82.41, 123.47, 246.94]) {
+      tone(c, lp, t0, f, 'sawtooth', 0.18, 0.5, 0.02);
+    }
+
+    const n = noiseSrc(c, noise);
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1800;
+    n.connect(hp).connect(envGain(c, t0 + 0.08, 0.3, 0.18, 0.001)).connect(out);
+    n.start(t0 + 0.08);
+    n.stop(t0 + 0.27);
+
+    for (let i = 0; i < 5; i++) {
+      tone(c, out, t0 + 0.12 + i * 0.055, 1568 + i * 145, 'sine', 0.08, 0.16, 0.005);
+    }
+    return 0.58;
   },
 
   // Filtered noise explosion + sub boom.
@@ -225,9 +285,12 @@ const SOUNDS: Record<SoundName, (env: SoundEnv) => number> = {
 export const createAudio: CreateAudio = (): AudioSys => {
   let ctx: AudioContext | null = null;
   let master: GainNode | null = null;
+  let ambientBus: GainNode | null = null;
   let noiseBuf: AudioBuffer | null = null;
   let masterVolume = 0.7;
+  let ambientStarted = false;
   const active = new Map<SoundName, number>();
+  const ambientSources: AudioScheduledSourceNode[] = [];
   const fwd = vec3();
 
   function ensure(): AudioContext | null {
@@ -261,10 +324,85 @@ export const createAudio: CreateAudio = (): AudioSys => {
     }
   }
 
+  function scheduleAmbientMotif(): void {
+    const c = ctx;
+    const out = ambientBus;
+    if (!c || !out || c.state !== 'running') return;
+    const notes = [220, 207.65, 164.81, 146.83, 196];
+    const start = c.currentTime + 0.05;
+    const offset = Math.floor(Math.random() * notes.length);
+    for (let i = 0; i < 4; i++) {
+      const f = notes[(offset + i) % notes.length] ?? 196;
+      tone(c, out, start + i * 0.52, f, 'sine', 0.055, 1.65, 0.08);
+      tone(c, out, start + i * 0.52 + 0.025, f * 2.01, 'triangle', 0.025, 1.15, 0.06);
+    }
+  }
+
+  function startAmbient(): void {
+    const c = ctx;
+    if (ambientStarted || !c || !master || !noiseBuf || c.state !== 'running') return;
+    ambientStarted = true;
+
+    const t0 = c.currentTime;
+    const bus = c.createGain();
+    bus.gain.setValueAtTime(0.0001, t0);
+    bus.gain.exponentialRampToValueAtTime(0.11, t0 + 4);
+    ambientBus = bus;
+
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 760;
+    lp.Q.value = 0.6;
+    lp.connect(bus).connect(master);
+
+    for (const [freq, detune, peak] of [
+      [55, -7, 0.06],
+      [82.41, 5, 0.045],
+      [110, 11, 0.035],
+    ] as const) {
+      const o = c.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = freq;
+      o.detune.value = detune;
+      const g = c.createGain();
+      g.gain.value = peak;
+      const lfo = c.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.value = 0.035 + Math.random() * 0.045;
+      const depth = c.createGain();
+      depth.gain.value = peak * 0.35;
+      lfo.connect(depth).connect(g.gain);
+      o.connect(g).connect(lp);
+      o.start(t0);
+      lfo.start(t0);
+      ambientSources.push(o, lfo);
+    }
+
+    const n = noiseSrc(c, noiseBuf);
+    n.loop = true;
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 520;
+    bp.Q.value = 0.45;
+    const ng = c.createGain();
+    ng.gain.value = 0.018;
+    n.connect(bp).connect(ng).connect(lp);
+    n.start(t0);
+    ambientSources.push(n);
+
+    scheduleAmbientMotif();
+    window.setInterval(scheduleAmbientMotif, 11500);
+  }
+
   return {
     resume(): void {
       const c = ensure();
-      if (c && c.state !== 'running') void c.resume();
+      if (!c) return;
+      if (c.state !== 'running') {
+        void c.resume().then(() => startAmbient()).catch(() => undefined);
+      } else {
+        startAmbient();
+      }
     },
 
     setListener(pos: Vec3, yaw: number): void {

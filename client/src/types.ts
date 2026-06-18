@@ -151,7 +151,10 @@ export type SoundName =
   | 'pad' // jump pad boing
   | 'teleport' // portal whoosh
   | 'respawn'
-  | 'matchEnd';
+  | 'matchEnd'
+  | 'streak2'
+  | 'streak3'
+  | 'streak5';
 
 export interface AudioSys {
   /** Call on first user gesture (pointer lock click) — resumes the context. */

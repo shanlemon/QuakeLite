@@ -31,7 +31,7 @@ import {
   type Snapshot,
   type SnapshotPlayer,
 } from '../../shared/protocol';
-import type { AudioSys, Hud, Renderer, RenderPlayer } from './types';
+import type { AudioSys, Hud, Renderer, RenderPlayer, SoundName } from './types';
 import type { DiscordContext } from './discord';
 import type { InputSys } from './input';
 import type { NetClient } from './net';
@@ -101,6 +101,13 @@ const FOOTSTEP_MIN_SPEED = 150;
 const ZOOM_FOV = 60;
 const ZOOM_FOV_RESPONSE = 16;
 
+function streakSound(streak: number): SoundName | null {
+  if (streak >= 5) return 'streak5';
+  if (streak >= 3) return 'streak3';
+  if (streak >= 2) return 'streak2';
+  return null;
+}
+
 function smoothFov(current: number, target: number, dt: number): number {
   const alpha = 1 - Math.exp(-ZOOM_FOV_RESPONSE * dt);
   const next = current + (target - current) * alpha;
@@ -123,6 +130,7 @@ export function createGame(d: GameDeps): Game {
   let lastFireAt = -Infinity;
   let deathAt = 0;
   let lastFootstepAt = 0;
+  let localKillStreak = 0;
   let lastFrameAt = performance.now();
   let renderFov = hud.getSettings().fov;
   let disconnected = false;
@@ -328,6 +336,7 @@ export function createGame(d: GameDeps): Game {
     if (victim) victim.deaths += 1;
 
     if (victimId === selfId) {
+      localKillStreak = 0;
       selfAlive = false;
       deathAt = performance.now();
       pending.length = 0;
@@ -335,8 +344,14 @@ export function createGame(d: GameDeps): Game {
       if (isVoidDeath) hud.showMessage('You drifted into the void', 2000);
     }
     if (killerId === selfId && victimId !== selfId) {
+      localKillStreak += 1;
       audio.play('frag');
-      hud.showMessage(`You fragged ${nameOf(victimId)}`, 2000);
+      const streak = streakSound(localKillStreak);
+      if (streak) audio.play(streak);
+      hud.showMessage(
+        localKillStreak >= 2 ? `${localKillStreak} frag streak!` : `You fragged ${nameOf(victimId)}`,
+        2000,
+      );
       discord.updateActivity(killer?.frags ?? 0);
     }
     pushScoreboard();
@@ -408,11 +423,13 @@ export function createGame(d: GameDeps): Game {
         match = msg.match;
         pending.length = 0;
         lastFireAt = -Infinity;
+        localKillStreak = 0;
         hud.hideMatchEnd();
         hud.showMessage('FIGHT!', 1500);
         break;
       case 'matchEnd':
         match = { state: 'intermission', endsAt: msg.restartAt, fragLimit: match.fragLimit };
+        localKillStreak = 0;
         hud.showMatchEnd(
           matchEndRows(msg.standings),
           Math.max(0, msg.restartAt - net.estServerTime()),
