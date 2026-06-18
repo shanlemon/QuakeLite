@@ -94,10 +94,18 @@ export class Viewmodel {
     add(new THREE.BoxGeometry(0.18, 1.75, 4.8), this.energyMat, 2.52, 0.25, -7.6);
     add(new THREE.BoxGeometry(0.18, 1.75, 4.8), this.energyMat, -2.52, 0.25, -7.6);
     add(new THREE.BoxGeometry(2.05, 0.2, 2.4), this.energyMat, 0, -2.08, -7.7);
+    for (const z of [-5.6, -7.4, -9.2]) {
+      add(new THREE.TorusGeometry(2.78, 0.13, 8, 18), this.energyMat, 0, 0.18, z);
+    }
 
     // Long forward barrel/rail and a rectangular muzzle fork.
     add(new THREE.CylinderGeometry(0.58, 0.72, 8.2, 12), silver, 0, 0.18, -16.6, Math.PI / 2);
     add(new THREE.CylinderGeometry(0.28, 0.28, 9.5, 8), darkMetal, 0, 1.0, -16.9, Math.PI / 2);
+    for (const z of [-14.0, -15.35, -16.7, -18.05]) {
+      add(new THREE.TorusGeometry(0.92, 0.08, 8, 14), this.energyMat, 0, 0.18, z);
+    }
+    add(new THREE.BoxGeometry(0.42, 1.7, 7.8), darkMetal, -1.08, 0.18, -16.55);
+    add(new THREE.BoxGeometry(0.42, 1.7, 7.8), darkMetal, 1.08, 0.18, -16.55);
     add(new THREE.CylinderGeometry(0.76, 0.76, 1.05, 12), silver, 0, 0.18, -21.2, Math.PI / 2);
     add(new THREE.BoxGeometry(3.1, 0.55, 0.7), darkMetal, 0, 0.18, -21.65);
     add(new THREE.BoxGeometry(0.45, 2.0, 0.7), darkMetal, -1.35, 0.18, -21.65);
@@ -113,7 +121,10 @@ export class Viewmodel {
     add(new THREE.CylinderGeometry(0.36, 0.36, 6.2, 8), silver, 2.9, -0.65, -7.0, Math.PI / 2);
     for (const z of [-4.7, -5.6, -6.5, -7.4, -8.3]) {
       add(new THREE.CylinderGeometry(0.48, 0.48, 0.64, 8), silver, -3.0, -0.6, z, 0, 0, Math.PI / 2);
+      add(new THREE.CylinderGeometry(0.48, 0.48, 0.64, 8), silver, 3.0, -0.6, z, 0, 0, Math.PI / 2);
     }
+    add(new THREE.BoxGeometry(0.55, 2.6, 3.4), bronzeDark, -3.25, 0.78, -7.2, 0, 0, -0.16);
+    add(new THREE.BoxGeometry(0.55, 2.6, 3.4), bronzeDark, 3.25, 0.78, -7.2, 0, 0, 0.16);
 
     // Raked grip, guard and trigger.
     add(new THREE.BoxGeometry(2.05, 4.8, 2.25), darkMetal, 0, -3.45, -2.2, 0.31);

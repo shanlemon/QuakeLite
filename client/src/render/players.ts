@@ -1,6 +1,6 @@
-// Remote player avatars: tinted capsule body, head + visor, a small railgun
-// tracking yaw+pitch, and a camera-facing nameplate sprite that fades with
-// distance. Avatars are pooled and recycled - no per-frame allocation.
+// Remote player avatars: pooled armored Quake-style humanoids with helmet,
+// shoulders, boots, a small railgun tracking yaw+pitch, and a camera-facing
+// nameplate sprite that fades with distance.
 
 import * as THREE from 'three';
 import { playerColor } from '../../../shared/constants';
@@ -16,9 +16,12 @@ interface ColorMats {
 
 interface Avatar {
   group: THREE.Group;
+  modelRoot: THREE.Group;
   body: THREE.Mesh;
   head: THREE.Mesh;
   visor: THREE.Mesh;
+  colorMeshes: THREE.Mesh[];
+  glowMeshes: THREE.Mesh[];
   gunPivot: THREE.Group;
   gunGlow: THREE.Mesh;
   plate: THREE.Sprite;
@@ -62,6 +65,16 @@ export class PlayerAvatars {
   private readonly bodyGeo = new THREE.CapsuleGeometry(13, 18, 4, 12);
   private readonly headGeo = new THREE.SphereGeometry(9, 12, 10);
   private readonly visorGeo = new THREE.BoxGeometry(13, 5, 5);
+  private readonly torsoGeo = new THREE.BoxGeometry(23, 24, 15);
+  private readonly chestPlateGeo = new THREE.BoxGeometry(19, 12, 3.4);
+  private readonly pelvisGeo = new THREE.BoxGeometry(17, 7, 12);
+  private readonly shoulderGeo = new THREE.BoxGeometry(10, 8, 16);
+  private readonly armGeo = new THREE.CapsuleGeometry(4, 13, 4, 8);
+  private readonly forearmGeo = new THREE.BoxGeometry(6, 12, 6);
+  private readonly legGeo = new THREE.CapsuleGeometry(4.8, 16, 4, 8);
+  private readonly bootGeo = new THREE.BoxGeometry(7, 5, 11);
+  private readonly helmetCrestGeo = new THREE.BoxGeometry(4, 3, 12);
+  private readonly backPackGeo = new THREE.BoxGeometry(15, 18, 5);
   private readonly gunBodyGeo = new THREE.BoxGeometry(4.5, 3.1, 11.5);
   private readonly gunTopGeo = new THREE.BoxGeometry(3.3, 0.75, 6.5);
   private readonly gunBarrelGeo = new THREE.CylinderGeometry(0.55, 0.7, 10, 10);
@@ -69,7 +82,9 @@ export class PlayerAvatars {
   private readonly gunWindowGeo = new THREE.BoxGeometry(1.75, 0.42, 4.6);
   private readonly gunPipeGeo = new THREE.CylinderGeometry(0.32, 0.32, 5.2, 8);
   private readonly gunGripGeo = new THREE.BoxGeometry(1.6, 3.4, 1.6);
+  private readonly suitMat = new THREE.MeshLambertMaterial({ color: 0x1a1c22, emissive: 0x050609 });
   private readonly visorMat = new THREE.MeshLambertMaterial({ color: 0x0d0f16 });
+  private readonly trimMat = new THREE.MeshLambertMaterial({ color: 0xb7b0a3, emissive: 0x16191f });
   private readonly gunMat = new THREE.MeshLambertMaterial({ color: 0x6c3f24, emissive: 0x140905 });
   private readonly gunDarkMat = new THREE.MeshLambertMaterial({ color: 0x17181d, emissive: 0x07080c });
   private readonly gunSilverMat = new THREE.MeshLambertMaterial({ color: 0xa9a49a, emissive: 0x151820 });
@@ -103,19 +118,75 @@ export class PlayerAvatars {
 
   private createAvatar(): Avatar {
     const group = new THREE.Group();
+    const modelRoot = new THREE.Group();
+    group.add(modelRoot);
     const mats = this.matsFor(0);
+    const colorMeshes: THREE.Mesh[] = [];
+    const glowMeshes: THREE.Mesh[] = [];
 
-    const body = new THREE.Mesh(this.bodyGeo, mats.body);
+    const body = new THREE.Mesh(this.bodyGeo, this.suitMat);
     body.position.y = 22; // capsule is 44 tall, feet at group origin
-    group.add(body);
+    modelRoot.add(body);
+
+    const torso = new THREE.Mesh(this.torsoGeo, mats.body);
+    torso.position.set(0, 29, 0);
+    torso.scale.set(1, 1, 0.86);
+    modelRoot.add(torso);
+    colorMeshes.push(torso);
+
+    const chest = new THREE.Mesh(this.chestPlateGeo, mats.body);
+    chest.position.set(0, 33, -8.4);
+    chest.rotation.x = -0.12;
+    modelRoot.add(chest);
+    colorMeshes.push(chest);
+
+    const backPack = new THREE.Mesh(this.backPackGeo, this.gunDarkMat);
+    backPack.position.set(0, 31, 8.4);
+    modelRoot.add(backPack);
+
+    const pelvis = new THREE.Mesh(this.pelvisGeo, mats.body);
+    pelvis.position.set(0, 17, 0);
+    modelRoot.add(pelvis);
+    colorMeshes.push(pelvis);
 
     const head = new THREE.Mesh(this.headGeo, mats.body);
     head.position.y = 48;
-    group.add(head);
+    modelRoot.add(head);
+    colorMeshes.push(head);
+
+    const crest = new THREE.Mesh(this.helmetCrestGeo, this.trimMat);
+    crest.position.set(0, 56, -1.2);
+    modelRoot.add(crest);
 
     const visor = new THREE.Mesh(this.visorGeo, this.visorMat);
     visor.position.set(0, 48.5, -6.5); // forward is -Z at yaw 0
-    group.add(visor);
+    modelRoot.add(visor);
+
+    for (const sx of [-1, 1]) {
+      const shoulder = new THREE.Mesh(this.shoulderGeo, mats.body);
+      shoulder.position.set(sx * 15.3, 39, -0.8);
+      shoulder.rotation.z = sx * -0.12;
+      modelRoot.add(shoulder);
+      colorMeshes.push(shoulder);
+
+      const arm = new THREE.Mesh(this.armGeo, this.suitMat);
+      arm.position.set(sx * 15.5, 27, -1);
+      arm.rotation.z = sx * 0.24;
+      modelRoot.add(arm);
+
+      const forearm = new THREE.Mesh(this.forearmGeo, this.trimMat);
+      forearm.position.set(sx * 14.4, 20, -3.4);
+      forearm.rotation.z = sx * 0.18;
+      modelRoot.add(forearm);
+
+      const leg = new THREE.Mesh(this.legGeo, this.suitMat);
+      leg.position.set(sx * 5.7, 9, 0.5);
+      modelRoot.add(leg);
+
+      const boot = new THREE.Mesh(this.bootGeo, this.trimMat);
+      boot.position.set(sx * 5.7, 2.4, -1.6);
+      modelRoot.add(boot);
+    }
 
     const gunPivot = new THREE.Group();
     gunPivot.position.set(9.5, 42, -2);
@@ -146,6 +217,7 @@ export class PlayerAvatars {
     const gunGlow = new THREE.Mesh(this.gunWindowGeo, mats.glow);
     gunGlow.position.set(0, 2.35, -8.2);
     gunPivot.add(gunGlow);
+    glowMeshes.push(gunGlow);
 
     const plateCanvas = document.createElement('canvas');
     plateCanvas.width = 256;
@@ -168,9 +240,12 @@ export class PlayerAvatars {
     this.scene.add(group);
     return {
       group,
+      modelRoot,
       body,
       head,
       visor,
+      colorMeshes,
+      glowMeshes,
       gunPivot,
       gunGlow,
       plate,
@@ -193,9 +268,8 @@ export class PlayerAvatars {
   private restyle(av: Avatar, p: RenderPlayer): void {
     if (av.colorIdx !== p.colorIdx || av.name === '') {
       const mats = this.matsFor(p.colorIdx);
-      av.body.material = mats.body;
-      av.head.material = mats.body;
-      av.gunGlow.material = mats.glow;
+      for (const mesh of av.colorMeshes) mesh.material = mats.body;
+      for (const mesh of av.glowMeshes) mesh.material = mats.glow;
       av.colorIdx = p.colorIdx;
       // Color changed → nameplate underline needs a redraw too.
       drawNameplate(av.plateCanvas, p.name, p.colorIdx);
@@ -211,13 +285,8 @@ export class PlayerAvatars {
   private pose(av: Avatar, crouched: boolean): void {
     if (av.crouched === crouched) return;
     av.crouched = crouched;
-    av.body.scale.set(1, crouched ? 0.66 : 1, 1);
-    av.body.position.y = crouched ? 14.5 : 22;
-    av.head.scale.setScalar(crouched ? 0.72 : 1);
-    av.head.position.y = crouched ? 27 : 48;
-    av.visor.scale.set(crouched ? 0.72 : 1, crouched ? 0.8 : 1, crouched ? 0.72 : 1);
-    av.visor.position.set(0, crouched ? 27.4 : 48.5, crouched ? -5.2 : -6.5);
-    av.gunPivot.position.set(9.5, crouched ? 27 : 42, -2);
+    av.modelRoot.scale.set(crouched ? 1.08 : 1, crouched ? 0.66 : 1, crouched ? 1.08 : 1);
+    av.gunPivot.position.set(9.5, crouched ? 28 : 42, -2);
     av.plate.position.y = crouched ? 54 : 74;
   }
 
@@ -274,6 +343,16 @@ export class PlayerAvatars {
     this.bodyGeo.dispose();
     this.headGeo.dispose();
     this.visorGeo.dispose();
+    this.torsoGeo.dispose();
+    this.chestPlateGeo.dispose();
+    this.pelvisGeo.dispose();
+    this.shoulderGeo.dispose();
+    this.armGeo.dispose();
+    this.forearmGeo.dispose();
+    this.legGeo.dispose();
+    this.bootGeo.dispose();
+    this.helmetCrestGeo.dispose();
+    this.backPackGeo.dispose();
     this.gunBodyGeo.dispose();
     this.gunTopGeo.dispose();
     this.gunBarrelGeo.dispose();
@@ -281,7 +360,9 @@ export class PlayerAvatars {
     this.gunWindowGeo.dispose();
     this.gunPipeGeo.dispose();
     this.gunGripGeo.dispose();
+    this.suitMat.dispose();
     this.visorMat.dispose();
+    this.trimMat.dispose();
     this.gunMat.dispose();
     this.gunDarkMat.dispose();
     this.gunSilverMat.dispose();
