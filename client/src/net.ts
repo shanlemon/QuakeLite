@@ -34,7 +34,8 @@ export interface NetClient {
 }
 
 const PING_INTERVAL_MS = 2000;
-const OFFSET_EMA = 0.2;
+const PING_OFFSET_EMA = 0.2;
+const SNAPSHOT_OFFSET_EMA = 0.05;
 
 /** Resolves once the socket is open and the join message has been sent. */
 export function connectNet(ctx: DiscordContext, cb: NetCallbacks, displayName = ''): Promise<NetClient> {
@@ -53,9 +54,9 @@ export function connectNet(ctx: DiscordContext, cb: NetCallbacks, displayName = 
     let opened = false;
     let pingTimer: number | undefined;
 
-    const sampleOffset = (serverTime: number): void => {
+    const sampleOffset = (serverTime: number, alpha = PING_OFFSET_EMA): void => {
       const sample = serverTime + rtt / 2 - performance.now();
-      offset = hasOffset ? offset + (sample - offset) * OFFSET_EMA : sample;
+      offset = hasOffset ? offset + (sample - offset) * alpha : sample;
       hasOffset = true;
     };
 
@@ -102,7 +103,7 @@ export function connectNet(ctx: DiscordContext, cb: NetCallbacks, displayName = 
         if (dv.byteLength > 0 && dv.getUint8(0) === MSG_SNAPSHOT) {
           const snap = decodeSnapshot(dv);
           // Snapshots double as cheap clock samples (20 Hz vs 0.5 Hz pings).
-          sampleOffset(snap.serverTime);
+          sampleOffset(snap.serverTime, SNAPSHOT_OFFSET_EMA);
           cb.onSnapshot(snap);
         }
         return;

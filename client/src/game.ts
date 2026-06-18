@@ -37,9 +37,11 @@ import type { InputSys } from './input';
 import type { NetClient } from './net';
 import {
   appendInterpSample,
+  createInterpDelayState,
   pruneInterpBuffer,
   sampleFromSnapshotPlayer,
   sampleInterpBuffer,
+  updateInterpDelay,
   type InterpSample,
 } from './interpolation';
 import { computeFirePreview, firePreviewMap, type FirePreviewTarget } from './firePreview';
@@ -138,6 +140,7 @@ export function createGame(d: GameDeps): Game {
   // ---- remote players -------------------------------------------------
   const buffers = new Map<number, InterpSample[]>();
   const remoteViews = new Map<number, RemoteView>();
+  const interpDelay = createInterpDelayState(GAME.INTERP_DELAY_MS);
 
   hud.setConnectionMessage('');
   pushScoreboard();
@@ -446,6 +449,7 @@ export function createGame(d: GameDeps): Game {
   }
 
   function onSnapshot(snap: Snapshot): void {
+    updateInterpDelay(interpDelay, snap.serverTime, performance.now());
     for (const p of snap.players) {
       if (p.id === selfId) reconcile(p, snap.ackSeq);
       else bufferSnapshotPlayer(p, snap.serverTime);
@@ -463,7 +467,7 @@ export function createGame(d: GameDeps): Game {
     lastFrameAt = now;
     const dt = Math.min(dtMs, 100) / 1000;
 
-    const renderTime = net.estServerTime() - GAME.INTERP_DELAY_MS;
+    const renderTime = net.estServerTime() - interpDelay.delayMs;
     updateRemoteViews(renderTime);
 
     // ---- build, predict and send this frame's command ----

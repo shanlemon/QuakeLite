@@ -4,9 +4,11 @@ import { vec3 } from '../shared/math';
 import type { SnapshotPlayer } from '../shared/protocol';
 import {
   appendInterpSample,
+  createInterpDelayState,
   pruneInterpBuffer,
   sampleFromSnapshotPlayer,
   sampleInterpBuffer,
+  updateInterpDelay,
   type InterpSample,
 } from '../client/src/interpolation';
 
@@ -86,6 +88,61 @@ console.log('client interpolation');
   const buf = [sample(0, 0), sample(1000, 10), sample(3000, 20), sample(3100, 30)];
   pruneInterpBuffer(buf, 1500);
   check('prune keeps recent samples while preserving at least two', buf.length === 2 && buf[0]!.t === 3000 && buf[1]!.t === 3100);
+}
+
+{
+  const delay = createInterpDelayState(100, 240);
+  let serverTime = 0;
+  let arrivalTime = 0;
+  updateInterpDelay(delay, serverTime, arrivalTime);
+  for (let i = 0; i < 10; i++) {
+    serverTime += 50;
+    arrivalTime += 50;
+    updateInterpDelay(delay, serverTime, arrivalTime);
+  }
+  check('steady snapshots keep base interpolation delay', near(delay.delayMs, 100));
+}
+
+{
+  const delay = createInterpDelayState(100, 240);
+  let serverTime = 0;
+  let arrivalTime = 0;
+  updateInterpDelay(delay, serverTime, arrivalTime);
+  for (let i = 0; i < 12; i++) {
+    serverTime += 50;
+    arrivalTime += i % 2 === 0 ? 15 : 85;
+    updateInterpDelay(delay, serverTime, arrivalTime);
+  }
+  check('jittery arrivals raise interpolation delay', delay.delayMs > 145, `delay=${delay.delayMs.toFixed(1)}`);
+  check('adaptive interpolation delay stays capped', delay.delayMs <= 240, `delay=${delay.delayMs.toFixed(1)}`);
+}
+
+{
+  const delay = createInterpDelayState(100, 240);
+  updateInterpDelay(delay, 0, 0);
+  updateInterpDelay(delay, 50, 50);
+  updateInterpDelay(delay, 150, 150);
+  check('dropped snapshots add interpolation padding', delay.delayMs > 115, `delay=${delay.delayMs.toFixed(1)}`);
+}
+
+{
+  const delay = createInterpDelayState(100, 240);
+  let serverTime = 0;
+  let arrivalTime = 0;
+  updateInterpDelay(delay, serverTime, arrivalTime);
+  for (let i = 0; i < 12; i++) {
+    serverTime += 50;
+    arrivalTime += i % 2 === 0 ? 15 : 85;
+    updateInterpDelay(delay, serverTime, arrivalTime);
+  }
+  const raised = delay.delayMs;
+  for (let i = 0; i < 60; i++) {
+    serverTime += 50;
+    arrivalTime += 50;
+    updateInterpDelay(delay, serverTime, arrivalTime);
+  }
+  check('adaptive interpolation delay recovers after jitter calms down', delay.delayMs < raised - 20, `raised=${raised.toFixed(1)} now=${delay.delayMs.toFixed(1)}`);
+  check('adaptive interpolation delay never falls below base', delay.delayMs >= 100, `delay=${delay.delayMs.toFixed(1)}`);
 }
 
 {
