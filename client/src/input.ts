@@ -51,6 +51,7 @@ const TOUCH_LOOK_FACTOR = 0.0032;
 const STICK_RADIUS = 58;
 const STICK_DEADZONE = 0.16;
 const MAX_TOUCH_LOOK_DELTA = 80;
+const TOUCH_BUTTON_HIT_PAD = 26;
 
 const TOUCH_CSS = `
 .ql-touch-controls{position:absolute;inset:0;z-index:6;pointer-events:none;touch-action:none;
@@ -67,6 +68,7 @@ const TOUCH_CSS = `
 .ql-touch-look{position:absolute;right:0;top:0;width:58%;height:100%;pointer-events:auto;touch-action:none;}
 .ql-touch-actions{position:absolute;inset:0;pointer-events:none;}
 .ql-touch-btn{position:absolute;pointer-events:auto;touch-action:none;width:68px;height:68px;border-radius:50%;border:1px solid rgba(180,235,255,0.68);
+  display:flex;align-items:center;justify-content:center;box-sizing:border-box;-webkit-tap-highlight-color:transparent;
   color:#eaffff;background:rgba(5,10,20,0.38);font:800 14px/1 'Rajdhani','Segoe UI',sans-serif;
   letter-spacing:0;text-shadow:0 1px 2px rgba(0,0,0,0.8);box-shadow:0 0 18px rgba(0,0,0,0.25);padding:0;}
 .ql-touch-btn:active,.ql-touch-btn.active{background:rgba(70,230,255,0.34);box-shadow:0 0 20px rgba(70,230,255,0.35);}
@@ -117,6 +119,12 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   let fireLastX = 0;
   let fireLastY = 0;
   let fireButtonEl: HTMLButtonElement | null = null;
+
+  interface TouchButtonBinding {
+    button: HTMLButtonElement;
+    press(e: PointerEvent): boolean;
+  }
+  const touchButtonBindings: TouchButtonBinding[] = [];
 
   const zeroKeys = (): void => {
     clearHeldInput(held);
@@ -255,6 +263,35 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     view = applyLookDelta(view, clampTouchDelta(dx), clampTouchDelta(dy), sens, TOUCH_LOOK_FACTOR);
   };
 
+  const touchButtonScore = (button: HTMLButtonElement, clientX: number, clientY: number): number => {
+    const r = button.getBoundingClientRect();
+    if (
+      clientX < r.left - TOUCH_BUTTON_HIT_PAD ||
+      clientX > r.right + TOUCH_BUTTON_HIT_PAD ||
+      clientY < r.top - TOUCH_BUTTON_HIT_PAD ||
+      clientY > r.bottom + TOUCH_BUTTON_HIT_PAD
+    ) {
+      return Infinity;
+    }
+    const cx = r.left + r.width * 0.5;
+    const cy = r.top + r.height * 0.5;
+    return Math.hypot(clientX - cx, clientY - cy);
+  };
+
+  const onTouchButtonCapture = (e: PointerEvent): void => {
+    if (!touchMode || !locked || touchButtonBindings.length === 0) return;
+    let best: TouchButtonBinding | null = null;
+    let bestScore = Infinity;
+    for (const binding of touchButtonBindings) {
+      const score = touchButtonScore(binding.button, e.clientX, e.clientY);
+      if (score < bestScore) {
+        best = binding;
+        bestScore = score;
+      }
+    }
+    if (best && bestScore < Infinity) best.press(e);
+  };
+
   function resetStick(): void {
     if (stickKnob) stickKnob.style.transform = 'translate(-50%,-50%)';
     if (stickEl) stickEl.style.display = 'none';
@@ -338,16 +375,20 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     lookPointer = null;
   };
 
-  const onFireDown = (e: PointerEvent): void => {
-    if (!touchMode || !locked || firePointer !== null) return;
+  const pressFire = (e: PointerEvent, button: HTMLButtonElement): boolean => {
+    if (!touchMode || !locked || firePointer !== null) return false;
     stopPointer(e);
     firePointer = e.pointerId;
     fireLastX = e.clientX;
     fireLastY = e.clientY;
     held.fire = true;
-    fireButtonEl = e.currentTarget as HTMLButtonElement;
+    fireButtonEl = button;
     fireButtonEl.classList.add('active');
     capturePointer(fireButtonEl, e.pointerId);
+    return true;
+  };
+  const onFireDown = (e: PointerEvent): void => {
+    pressFire(e, e.currentTarget as HTMLButtonElement);
   };
   const onFireMove = (e: PointerEvent): void => {
     if (e.pointerId !== firePointer) return;
@@ -382,14 +423,15 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     opts: { holdScoreboard?: boolean } = {},
   ): void => {
     let pointerId: number | null = null;
-    const down = (e: PointerEvent): void => {
-      if (!touchMode || !locked || (pointerId !== null && button.classList.contains('active'))) return;
+    const down = (e: PointerEvent): boolean => {
+      if (!touchMode || !locked || (pointerId !== null && button.classList.contains('active'))) return false;
       stopPointer(e);
       pointerId = e.pointerId;
       button.classList.add('active');
       capturePointer(button, e.pointerId);
       setDown(true);
       if (opts.holdScoreboard) hooks.onScoreboard(true);
+      return true;
     };
     const up = (e: PointerEvent): void => {
       if (pointerId !== null && e.pointerId !== pointerId) return;
@@ -399,10 +441,11 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
       setDown(false);
       if (opts.holdScoreboard) hooks.onScoreboard(false);
     };
-    button.addEventListener('pointerdown', down);
+    button.addEventListener('pointerdown', (e) => { down(e); });
     button.addEventListener('pointerup', up);
     button.addEventListener('pointercancel', up);
     button.addEventListener('lostpointercapture', up);
+    touchButtonBindings.push({ button, press: down });
   };
 
   if (touchMode) {
@@ -457,6 +500,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
 
     document.addEventListener('pointerup', onTouchPointerEnd);
     document.addEventListener('pointercancel', onTouchPointerEnd);
+    touchControls.addEventListener('pointerdown', onTouchButtonCapture, { capture: true });
     moveEl.addEventListener('pointerdown', onStickDown);
     moveEl.addEventListener('pointermove', onStickMove);
     moveEl.addEventListener('pointerup', onStickUp);
@@ -478,6 +522,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     fireBtn.addEventListener('pointerup', onFireUp);
     fireBtn.addEventListener('pointercancel', onFireUp);
     fireBtn.addEventListener('lostpointercapture', onFireUp);
+    touchButtonBindings.push({ button: fireBtn, press: (e) => pressFire(e, fireBtn) });
     bindTouchButton(scoreBtn, () => {}, { holdScoreboard: true });
   }
 
