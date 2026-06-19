@@ -126,8 +126,8 @@ export const createRenderer: CreateRenderer = (map, container) => {
     camera.position.set(view.pos.x, view.pos.y, view.pos.z);
     camera.rotation.y = view.yaw;
     camera.rotation.x = view.pitch;
-    const w = renderer.domElement.width || 1;
-    const h = renderer.domElement.height || 1;
+    const w = Math.max(1, renderer.domElement.clientWidth || container.clientWidth || window.innerWidth);
+    const h = Math.max(1, renderer.domElement.clientHeight || container.clientHeight || window.innerHeight);
     applyFov(view.fov, w / h);
 
     for (const p of players) {
@@ -137,6 +137,7 @@ export const createRenderer: CreateRenderer = (map, container) => {
       }
     }
     viewmodel.setColor(localColorIdx);
+    viewmodel.setTouchLayout(document.body.classList.contains('ql-touch-mode'));
     viewmodel.update(timeMs, dtMs);
     viewmodel.group.visible = players.some((p) => p.isLocal && p.alive);
 

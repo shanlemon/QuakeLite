@@ -6,8 +6,10 @@
 import * as THREE from 'three';
 import { playerColor } from '../../../shared/constants';
 
-const BASE_POS = new THREE.Vector3(7.1, -6.1, -14.2);
-const BASE_YAW = 0.14;
+const DESKTOP_BASE_POS = new THREE.Vector3(7.1, -6.1, -14.2);
+const TOUCH_BASE_POS = new THREE.Vector3(3.4, -4.35, -14.8);
+const DESKTOP_BASE_YAW = 0.14;
+const TOUCH_BASE_YAW = 0.06;
 /** Recoil decays to ~5% in 150 ms: exp(-150/50). */
 const RECOIL_DECAY_MS = 50;
 
@@ -17,12 +19,14 @@ export class Viewmodel {
   private readonly accentMat: THREE.MeshBasicMaterial;
   private recoil = 0;
   private colorIdx = -1;
+  private touchLayout = false;
   private readonly disposables: { dispose(): void }[] = [];
 
   constructor() {
     this.group = new THREE.Group();
     this.group.name = 'viewmodel';
-    this.group.position.copy(BASE_POS);
+    this.group.position.copy(DESKTOP_BASE_POS);
+    this.group.renderOrder = 1000;
 
     const bronze = new THREE.MeshLambertMaterial({
       color: 0x7f4a2a,
@@ -58,6 +62,9 @@ export class Viewmodel {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
+    for (const mat of [bronze, bronzeDark, silver, darkMetal, this.energyMat, this.accentMat]) {
+      keepInFront(mat);
+    }
     this.disposables.push(bronze, bronzeDark, silver, darkMetal, this.energyMat, this.accentMat);
 
     const add = (
@@ -75,6 +82,7 @@ export class Viewmodel {
       m.position.set(x, y, z);
       if (rx !== 0 || ry !== 0 || rz !== 0) m.rotation.set(rx, ry, rz);
       m.frustumCulled = false;
+      m.renderOrder = 1000;
       this.group.add(m);
       return m;
     };
@@ -140,6 +148,10 @@ export class Viewmodel {
     this.accentMat.color.copy(c).lerp(new THREE.Color(0xffffff), 0.15);
   }
 
+  setTouchLayout(enabled: boolean): void {
+    this.touchLayout = enabled;
+  }
+
   triggerRecoil(): void {
     this.recoil = 1;
   }
@@ -151,14 +163,16 @@ export class Viewmodel {
     // Gentle idle sway (no velocity available - purely time-based).
     const swayX = Math.sin(t * 1.05) * 0.22;
     const swayY = Math.sin(t * 1.71 + 0.9) * 0.18;
+    const basePos = this.touchLayout ? TOUCH_BASE_POS : DESKTOP_BASE_POS;
+    const baseYaw = this.touchLayout ? TOUCH_BASE_YAW : DESKTOP_BASE_YAW;
     this.group.position.set(
-      BASE_POS.x + swayX,
-      BASE_POS.y + swayY,
-      BASE_POS.z + this.recoil * 3.6, // kick back toward the camera
+      basePos.x + swayX,
+      basePos.y + swayY,
+      basePos.z + this.recoil * 3.6, // kick back toward the camera
     );
     this.group.rotation.set(
       this.recoil * 0.14,
-      BASE_YAW + Math.sin(t * 0.83) * 0.008,
+      baseYaw + Math.sin(t * 0.83) * 0.008,
       Math.sin(t * 0.67) * 0.01,
     );
     // Charge windows and muzzle flare brighten while recoil energy bleeds off.
@@ -169,4 +183,9 @@ export class Viewmodel {
   dispose(): void {
     for (const d of this.disposables) d.dispose();
   }
+}
+
+function keepInFront(material: THREE.Material): void {
+  material.depthTest = false;
+  material.depthWrite = false;
 }

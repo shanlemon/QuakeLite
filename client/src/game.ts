@@ -187,10 +187,8 @@ export function createGame(d: GameDeps): Game {
     }
   }
 
-  function fireLocal(): void {
+  function fireLocal(yaw: number, pitch: number): void {
     lastFireAt = performance.now();
-    const yaw = input.getYaw();
-    const pitch = input.getPitch();
     const preview = computeFirePreview({
       shooterPos: local.pos,
       shooterCrouched: local.crouched,
@@ -490,7 +488,7 @@ export function createGame(d: GameDeps): Game {
       for (const ev of events) onLocalEvent(ev);
       pending.push({ cmd, pos: clone(local.pos), teleportCount: local.teleportCount, crouched: local.crouched });
       if (pending.length > PENDING_CAP) pending.splice(0, pending.length - PENDING_CAP);
-      if ((cmd.buttons & BUTTON_FIRE) !== 0) fireLocal();
+      if ((cmd.buttons & BUTTON_FIRE) !== 0) fireLocal(cmd.yaw, cmd.pitch);
     }
     net.sendInput(cmd); // dead/intermission still sends empty cmds (keeps acks flowing)
 
