@@ -77,6 +77,19 @@ const TOUCH_CSS = `
 .ql-touch-jump{right:max(128px,calc(env(safe-area-inset-right) + 128px));bottom:max(24px,calc(env(safe-area-inset-bottom) + 24px));}
 .ql-touch-crouch{right:max(214px,calc(env(safe-area-inset-right) + 214px));bottom:max(24px,calc(env(safe-area-inset-bottom) + 24px));}
 .ql-touch-score{right:max(128px,calc(env(safe-area-inset-right) + 128px));bottom:max(128px,calc(env(safe-area-inset-bottom) + 128px));}
+.ql-touch-orientation{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;box-sizing:border-box;
+  padding:max(18px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));
+  pointer-events:auto;touch-action:none;background:rgba(1,4,10,0.86);color:#eaffff;text-align:center;
+  font-family:'Rajdhani','Segoe UI',Consolas,'Courier New',monospace;-webkit-user-select:none;user-select:none;}
+.ql-touch-orientation.hidden{display:none;}
+.ql-touch-orientation-panel{display:grid;justify-items:center;gap:10px;max-width:360px;padding:22px 24px;border-radius:8px;
+  border:1px solid rgba(180,235,255,0.42);background:rgba(3,9,18,0.84);box-shadow:0 18px 60px rgba(0,0,0,0.48);}
+.ql-touch-orientation-icon{width:78px;height:48px;border:2px solid rgba(180,235,255,0.78);border-radius:8px;position:relative;
+  box-shadow:0 0 24px rgba(70,230,255,0.22);}
+.ql-touch-orientation-icon::after{content:'';position:absolute;right:5px;top:50%;width:4px;height:14px;border-radius:2px;
+  transform:translateY(-50%);background:rgba(180,235,255,0.78);}
+.ql-touch-orientation-title{font:800 22px/1 'Rajdhani','Segoe UI',sans-serif;text-transform:uppercase;}
+.ql-touch-orientation-copy{font:600 14px/1.35 'Rajdhani','Segoe UI',sans-serif;color:rgba(234,255,255,0.78);}
 @media (max-width:760px),(pointer:coarse){
   .ql-touch-stick{width:118px;height:118px;margin:-59px 0 0 -59px;}
   .ql-touch-btn{width:62px;height:62px;font-size:12px;}
@@ -105,8 +118,10 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   let locked = false;
   const touchMode = supportsTouch();
   const held = createHeldInputState();
+  const neutralHeld = createHeldInputState();
 
   let touchControls: HTMLElement | null = null;
+  let orientationOverlay: HTMLElement | null = null;
   let stickEl: HTMLElement | null = null;
   let stickKnob: HTMLElement | null = null;
   let movePointer: number | null = null;
@@ -119,6 +134,8 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   let fireLastX = 0;
   let fireLastY = 0;
   let fireButtonEl: HTMLButtonElement | null = null;
+  let touchOrientationBlocked = false;
+  let reportedLocked = false;
 
   interface TouchButtonBinding {
     button: HTMLButtonElement;
@@ -131,11 +148,51 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     resetTouchControls();
   };
 
+  const isTouchPortrait = (): boolean => (
+    touchMode && (
+      window.matchMedia?.('(orientation: portrait)').matches === true ||
+      window.innerHeight > window.innerWidth
+    )
+  );
+
+  const effectiveLocked = (): boolean => locked && !touchOrientationBlocked;
+
+  const reportLockChange = (): void => {
+    const next = effectiveLocked();
+    if (reportedLocked === next) return;
+    reportedLocked = next;
+    hooks.onLockChange(next);
+  };
+
+  const syncTouchOrientation = (): void => {
+    if (!touchMode) return;
+    const blocked = isTouchPortrait();
+    if (touchOrientationBlocked !== blocked) {
+      touchOrientationBlocked = blocked;
+      if (blocked) zeroKeys();
+    }
+    orientationOverlay?.classList.toggle('hidden', !touchOrientationBlocked);
+    touchControls?.classList.toggle('hidden', !effectiveLocked());
+    reportLockChange();
+  };
+
+  const requestScreenLandscape = (): void => {
+    try {
+      const orientation = screen.orientation as (ScreenOrientation & {
+        lock?: (orientation: string) => Promise<void>;
+      }) | undefined;
+      const p = orientation?.lock?.('landscape');
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {
+      /* browser did not allow programmatic orientation lock */
+    }
+  };
+
   const requestLock = (): void => {
     if (touchMode) {
+      requestScreenLandscape();
       locked = true;
-      touchControls?.classList.remove('hidden');
-      hooks.onLockChange(true);
+      syncTouchOrientation();
       return;
     }
 
@@ -169,14 +226,14 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   const onPointerDown = (): void => {
     if (!touchMode) return;
     hooks.onInteract();
-    if (!locked) requestLock();
+    if (!effectiveLocked()) requestLock();
   };
 
   const onLockChange = (): void => {
     if (touchMode) return;
     locked = document.pointerLockElement === el;
     if (!locked) zeroKeys();
-    hooks.onLockChange(locked);
+    reportLockChange();
   };
 
   const onMouseMove = (e: MouseEvent): void => {
@@ -263,6 +320,17 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     view = applyLookDelta(view, clampTouchDelta(dx), clampTouchDelta(dy), sens, TOUCH_LOOK_FACTOR);
   };
 
+  const onTouchOrientationChange = (): void => {
+    syncTouchOrientation();
+  };
+
+  const onOrientationPointerDown = (e: PointerEvent): void => {
+    if (!touchMode || !touchOrientationBlocked) return;
+    stopPointer(e);
+    hooks.onInteract();
+    requestLock();
+  };
+
   const touchButtonScore = (button: HTMLButtonElement, clientX: number, clientY: number): number => {
     const r = button.getBoundingClientRect();
     if (
@@ -279,7 +347,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   };
 
   const onTouchButtonCapture = (e: PointerEvent): void => {
-    if (!touchMode || !locked || touchButtonBindings.length === 0) return;
+    if (!touchMode || !effectiveLocked() || touchButtonBindings.length === 0) return;
     let best: TouchButtonBinding | null = null;
     let bestScore = Infinity;
     for (const binding of touchButtonBindings) {
@@ -322,7 +390,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   };
 
   const onStickDown = (e: PointerEvent): void => {
-    if (!touchMode || !locked || movePointer !== null) return;
+    if (!touchMode || !effectiveLocked() || movePointer !== null) return;
     stopPointer(e);
     movePointer = e.pointerId;
     stickCenterX = e.clientX;
@@ -353,7 +421,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   };
 
   const onLookDown = (e: PointerEvent): void => {
-    if (!touchMode || !locked || lookPointer !== null) return;
+    if (!touchMode || !effectiveLocked() || lookPointer !== null) return;
     stopPointer(e);
     lookPointer = e.pointerId;
     lookLastX = e.clientX;
@@ -376,7 +444,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   };
 
   const pressFire = (e: PointerEvent, button: HTMLButtonElement): boolean => {
-    if (!touchMode || !locked || firePointer !== null) return false;
+    if (!touchMode || !effectiveLocked() || firePointer !== null) return false;
     stopPointer(e);
     firePointer = e.pointerId;
     fireLastX = e.clientX;
@@ -424,7 +492,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
   ): void => {
     let pointerId: number | null = null;
     const down = (e: PointerEvent): boolean => {
-      if (!touchMode || !locked || (pointerId !== null && button.classList.contains('active'))) return false;
+      if (!touchMode || !effectiveLocked() || (pointerId !== null && button.classList.contains('active'))) return false;
       stopPointer(e);
       pointerId = e.pointerId;
       button.classList.add('active');
@@ -498,8 +566,23 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     touchControls.appendChild(actions);
     el.appendChild(touchControls);
 
+    orientationOverlay = document.createElement('div');
+    orientationOverlay.className = 'ql-touch-orientation hidden';
+    orientationOverlay.setAttribute('role', 'status');
+    orientationOverlay.setAttribute('aria-live', 'polite');
+    orientationOverlay.innerHTML = `
+      <div class="ql-touch-orientation-panel">
+        <div class="ql-touch-orientation-icon" aria-hidden="true"></div>
+        <div class="ql-touch-orientation-title">Rotate to landscape</div>
+        <div class="ql-touch-orientation-copy">Touch controls are locked to the wide layout.</div>
+      </div>`;
+    el.appendChild(orientationOverlay);
+
     document.addEventListener('pointerup', onTouchPointerEnd);
     document.addEventListener('pointercancel', onTouchPointerEnd);
+    window.addEventListener('resize', onTouchOrientationChange);
+    window.addEventListener('orientationchange', onTouchOrientationChange);
+    orientationOverlay.addEventListener('pointerdown', onOrientationPointerDown);
     touchControls.addEventListener('pointerdown', onTouchButtonCapture, { capture: true });
     moveEl.addEventListener('pointerdown', onStickDown);
     moveEl.addEventListener('pointermove', onStickMove);
@@ -524,6 +607,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
     fireBtn.addEventListener('lostpointercapture', onFireUp);
     touchButtonBindings.push({ button: fireBtn, press: (e) => pressFire(e, fireBtn) });
     bindTouchButton(scoreBtn, () => {}, { holdScoreboard: true });
+    syncTouchOrientation();
   }
 
   el.addEventListener('click', onClick);
@@ -539,7 +623,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
 
   return {
     sample(): InputSample {
-      return buildInputSample(held, view);
+      return buildInputSample(touchOrientationBlocked ? neutralHeld : held, view);
     },
     setSensitivity(s: number): void {
       sens = normalizeSensitivity(s);
@@ -551,7 +635,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
       return view.pitch;
     },
     isZooming(): boolean {
-      return held.zoom;
+      return !touchOrientationBlocked && held.zoom;
     },
     isTouchMode(): boolean {
       return touchMode;
@@ -563,7 +647,7 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
       view = setViewAngles(newYaw, newPitch);
     },
     isLocked(): boolean {
-      return locked;
+      return effectiveLocked();
     },
     requestLock,
     dispose(): void {
@@ -579,7 +663,11 @@ export function createInput(el: HTMLElement, hooks: InputHooks): InputSys {
       window.removeEventListener('blur', onBlur);
       document.removeEventListener('pointerup', onTouchPointerEnd);
       document.removeEventListener('pointercancel', onTouchPointerEnd);
+      window.removeEventListener('resize', onTouchOrientationChange);
+      window.removeEventListener('orientationchange', onTouchOrientationChange);
+      orientationOverlay?.removeEventListener('pointerdown', onOrientationPointerDown);
       touchControls?.remove();
+      orientationOverlay?.remove();
     },
   };
 }
