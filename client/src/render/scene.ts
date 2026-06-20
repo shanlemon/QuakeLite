@@ -33,6 +33,8 @@ export const createRenderer: CreateRenderer = (map, container) => {
   // against the black void.
   renderer.toneMappingExposure = isSpace ? 1.25 : 1.15;
   renderer.domElement.style.display = 'block';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
   container.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -87,6 +89,8 @@ export const createRenderer: CreateRenderer = (map, container) => {
   // --- camera / projection ----------------------------------------------------
   let lastHFov = -1;
   let lastAspect = -1;
+  let lastFitW = 0;
+  let lastFitH = 0;
 
   /** view.fov is Quake-style horizontal FOV; three wants vertical degrees. */
   function applyFov(hfovDeg: number, aspect: number): void {
@@ -99,10 +103,18 @@ export const createRenderer: CreateRenderer = (map, container) => {
     camera.updateProjectionMatrix();
   }
 
+  function displaySize(): { w: number; h: number } {
+    return {
+      w: Math.max(1, container.clientWidth || window.innerWidth),
+      h: Math.max(1, container.clientHeight || window.innerHeight),
+    };
+  }
+
   function fitToContainer(): void {
-    const w = Math.max(1, container.clientWidth || window.innerWidth);
-    const h = Math.max(1, container.clientHeight || window.innerHeight);
-    renderer.setSize(w, h);
+    const { w, h } = displaySize();
+    lastFitW = w;
+    lastFitH = h;
+    renderer.setSize(w, h, false);
     if (lastHFov > 0) {
       lastAspect = -1; // force fov recompute for the new aspect
       applyFov(lastHFov, w / h);
@@ -126,8 +138,8 @@ export const createRenderer: CreateRenderer = (map, container) => {
     camera.position.set(view.pos.x, view.pos.y, view.pos.z);
     camera.rotation.y = view.yaw;
     camera.rotation.x = view.pitch;
-    const w = Math.max(1, renderer.domElement.clientWidth || container.clientWidth || window.innerWidth);
-    const h = Math.max(1, renderer.domElement.clientHeight || container.clientHeight || window.innerHeight);
+    const { w, h } = displaySize();
+    if (w !== lastFitW || h !== lastFitH) fitToContainer();
     applyFov(view.fov, w / h);
 
     for (const p of players) {

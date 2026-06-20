@@ -55,7 +55,13 @@ async function boot(): Promise<void> {
     const discord = await initDiscord();
 
     renderer = createRenderer(activeMap, appRoot);
-    window.addEventListener('resize', () => renderer?.resize());
+    const resizeRenderer = (): void => {
+      renderer?.resize();
+      window.setTimeout(() => renderer?.resize(), 140);
+    };
+    window.addEventListener('resize', resizeRenderer);
+    window.addEventListener('orientationchange', resizeRenderer);
+    window.visualViewport?.addEventListener('resize', resizeRenderer);
 
     audio = createAudio();
     input = createInput(appRoot, {
