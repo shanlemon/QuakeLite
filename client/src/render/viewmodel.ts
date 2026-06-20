@@ -7,9 +7,10 @@ import * as THREE from 'three';
 import { playerColor } from '../../../shared/constants';
 
 const DESKTOP_BASE_POS = new THREE.Vector3(7.1, -6.1, -14.2);
-const TOUCH_BASE_POS = new THREE.Vector3(3.4, -4.35, -14.8);
+const TOUCH_BASE_POS = new THREE.Vector3(5.8, -6.8, -16.8);
 const DESKTOP_BASE_YAW = 0.14;
-const TOUCH_BASE_YAW = 0.06;
+const TOUCH_BASE_YAW = 0.11;
+const TOUCH_SCALE = 0.78;
 /** Recoil decays to ~5% in 150 ms: exp(-150/50). */
 const RECOIL_DECAY_MS = 50;
 
@@ -165,6 +166,7 @@ export class Viewmodel {
     const swayY = Math.sin(t * 1.71 + 0.9) * 0.18;
     const basePos = this.touchLayout ? TOUCH_BASE_POS : DESKTOP_BASE_POS;
     const baseYaw = this.touchLayout ? TOUCH_BASE_YAW : DESKTOP_BASE_YAW;
+    this.group.scale.setScalar(this.touchLayout ? TOUCH_SCALE : 1);
     this.group.position.set(
       basePos.x + swayX,
       basePos.y + swayY,
